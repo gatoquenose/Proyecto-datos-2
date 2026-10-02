@@ -1,0 +1,23 @@
+# CMake and compiler outputs
+/build/
+/cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# Frontend dependencies and generated output
+/frontend/node_modules/
+/frontend/dist/
+/frontend/*.tsbuildinfo
+
+# IDE metadata
+/.idea/
+
+# Local configuration and runtime data
+.env
+*.local
+/data/*.dat
+/data/*.idx
+/storage/*
+!/storage/.gitkeep

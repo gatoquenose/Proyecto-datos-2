@@ -1,0 +1,6 @@
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: tecflix
+    static_configs:
+      - targets: ["users-api:8080", "metadata-api:8080", "streaming-api:8080"]

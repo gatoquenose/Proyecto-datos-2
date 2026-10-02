@@ -1,0 +1,23 @@
+services:
+  users-api:
+    build: .
+    command: ["./build/users-api"]
+    ports: ["8081:8080"]
+  metadata-api:
+    build: .
+    command: ["./build/metadata-api"]
+    ports: ["8082:8080"]
+  streaming-api:
+    build: .
+    command: ["./build/streaming-api"]
+    ports: ["8083:8080"]
+  otel-collector:
+    image: otel/opentelemetry-collector:0.109.0
+    volumes: ["./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro"]
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports: ["3000:3000"]
+    volumes: ["./observability/grafana:/etc/grafana/provisioning:ro"]
