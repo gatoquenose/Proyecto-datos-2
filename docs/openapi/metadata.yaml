@@ -1,0 +1,204 @@
+openapi: 3.0.3
+info:
+  title: Tecflix Metadata API
+  version: 1.0.0
+  description: Metadata de videos, visibilidad y listado cursor-based en MongoDB.
+servers:
+  - url: http://localhost:8082/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /videos:
+    post:
+      summary: Crear metadata de video
+      operationId: createVideo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVideoRequest' }
+      responses:
+        '201':
+          description: Video creado en estado processing
+          content: { application/json: { schema: { $ref: '#/components/schemas/Video' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+    get:
+      summary: Listar videos públicos y propios con orden y cursor en MongoDB
+      operationId: listVideos
+      parameters:
+        - { $ref: '#/components/parameters/SortBy' }
+        - { $ref: '#/components/parameters/Order' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/Search' }
+        - name: owner
+          in: query
+          description: Con valor me devuelve solamente videos del usuario autenticado
+          schema: { type: string, enum: [me] }
+      responses:
+        '200':
+          description: Página ordenada; nextCursor es opaco y null en la última página
+          content: { application/json: { schema: { $ref: '#/components/schemas/VideoPage' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+  /videos/{id}:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    get:
+      summary: Consultar video
+      operationId: getVideo
+      responses:
+        '200': { description: Video, content: { application/json: { schema: { $ref: '#/components/schemas/Video' } } } }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    patch:
+      summary: Actualizar metadata editable del dueño
+      operationId: updateVideo
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateVideoRequest' } } }
+      responses:
+        '200': { description: Video actualizado, content: { application/json: { schema: { $ref: '#/components/schemas/Video' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    delete:
+      summary: Eliminar video del dueño y coordinar borrado físico
+      operationId: deleteVideo
+      responses:
+        '204': { description: Video eliminado }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /videos/{id}/visibility:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    patch:
+      summary: Cambiar visibilidad del dueño
+      operationId: updateVideoVisibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visibility]
+              properties: { visibility: { $ref: '#/components/schemas/Visibility' } }
+      responses:
+        '200': { description: Video actualizado, content: { application/json: { schema: { $ref: '#/components/schemas/Video' } } } }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /internal/videos/{id}/processing-complete:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    post:
+      security: [serviceToken: []]
+      summary: Notificar procesamiento exitoso
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ProcessingCompleteRequest' } } }
+      responses: { '204': { description: Estado actualizado }, '404': { $ref: '#/components/responses/NotFoundError' } }
+  /internal/videos/{id}/processing-failed:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    post:
+      security: [serviceToken: []]
+      summary: Notificar fallo de procesamiento
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ProcessingFailedRequest' } } }
+      responses: { '204': { description: Estado actualizado }, '404': { $ref: '#/components/responses/NotFoundError' } }
+  /internal/videos/{id}/streaming-deleted:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    post:
+      security: [serviceToken: []]
+      summary: Confirmar borrado físico en streaming
+      responses: { '204': { description: Confirmación recibida }, '404': { $ref: '#/components/responses/NotFoundError' } }
+  /health:
+    get:
+      security: []
+      responses: { '200': { $ref: '#/components/responses/HealthResponse' } }
+  /ready:
+    get:
+      security: []
+      responses: { '200': { $ref: '#/components/responses/HealthResponse' }, '503': { $ref: '#/components/responses/ServiceUnavailableError' } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+    serviceToken: { type: http, scheme: bearer, description: Token interno de servicio }
+  parameters:
+    VideoId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    SortBy: { name: sortBy, in: query, schema: { type: string, enum: [title, author, uploadedAt], default: uploadedAt } }
+    Order: { name: order, in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+    PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+    Search: { name: q, in: query, schema: { type: string, maxLength: 200 } }
+  schemas:
+    Visibility: { type: string, enum: [public, private] }
+    VideoStatus: { type: string, enum: [processing, ready, failed] }
+    CreateVideoRequest:
+      type: object
+      required: [title, description, author, topic, tags, visibility, sizeBytes]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 5000 }
+        author: { type: string, maxLength: 200 }
+        topic: { type: string, maxLength: 100 }
+        tags: { type: array, maxItems: 30, items: { type: string, maxLength: 50 } }
+        uploadedAt: { type: string, format: date-time }
+        visibility: { $ref: '#/components/schemas/Visibility' }
+        sizeBytes: { type: integer, format: int64, minimum: 1 }
+    UpdateVideoRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 5000 }
+        author: { type: string, maxLength: 200 }
+        topic: { type: string, maxLength: 100 }
+        tags: { type: array, maxItems: 30, items: { type: string, maxLength: 50 } }
+        uploadedAt: { type: string, format: date-time }
+    Video:
+      type: object
+      required: [id, ownerId, ownerUsername, title, description, author, topic, tags, durationSeconds, uploadedAt, visibility, sizeBytes, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        ownerId: { type: string, format: uuid, readOnly: true }
+        ownerUsername: { type: string, readOnly: true }
+        title: { type: string }
+        description: { type: string }
+        author: { type: string }
+        topic: { type: string }
+        tags: { type: array, items: { type: string } }
+        durationSeconds: { type: integer, minimum: 0, readOnly: true }
+        uploadedAt: { type: string, format: date-time }
+        visibility: { $ref: '#/components/schemas/Visibility' }
+        sizeBytes: { type: integer, format: int64, readOnly: true }
+        status: { $ref: '#/components/schemas/VideoStatus' }
+        createdAt: { type: string, format: date-time, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+    VideoPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Video' } }
+        nextCursor: { type: string, nullable: true }
+    ProcessingCompleteRequest:
+      type: object
+      required: [durationSeconds]
+      properties: { durationSeconds: { type: integer, minimum: 0 }, finalSizeBytes: { type: integer, format: int64, minimum: 0 } }
+    ProcessingFailedRequest:
+      type: object
+      required: [reason]
+      properties: { reason: { type: string, maxLength: 1000 } }
+    ApiError:
+      type: object
+      required: [code, message, details, traceId]
+      properties: { code: { type: string }, message: { type: string }, details: { nullable: true }, traceId: { type: string } }
+  responses:
+    ValidationError: { description: Validación fallida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    UnauthorizedError: { description: Autenticación requerida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    ForbiddenError: { description: Sin permisos, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    NotFoundError: { description: No encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    ServiceUnavailableError: { description: Servicio no listo, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    HealthResponse: { description: Estado del servicio, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string } } } } } }

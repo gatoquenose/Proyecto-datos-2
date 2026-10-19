@@ -1,0 +1,186 @@
+openapi: 3.0.3
+info:
+  title: Tecflix Streaming API
+  version: 1.0.0
+  description: Subidas reanudables, procesamiento FFmpeg y reproducción MPEG-DASH.
+servers:
+  - url: http://localhost:8083/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /videos/{videoId}/upload:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    post:
+      summary: Iniciar una subida reanudable
+      operationId: startUpload
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/StartUploadRequest' } } }
+      responses:
+        '201': { description: Subida iniciada, content: { application/json: { schema: { $ref: '#/components/schemas/UploadStatus' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '413': { $ref: '#/components/responses/QuotaError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+  /uploads/{uploadId}/chunks/{chunkNumber}:
+    parameters:
+      - $ref: '#/components/parameters/UploadId'
+      - name: chunkNumber
+        in: path
+        required: true
+        schema: { type: integer, minimum: 0 }
+      - name: X-Chunk-Checksum
+        in: header
+        required: true
+        description: SHA-256 hexadecimal del contenido exacto del fragmento
+        schema: { type: string, pattern: '^[A-Fa-f0-9]{64}$' }
+      - name: Content-Range
+        in: header
+        required: true
+        description: Rango byte del fragmento, por ejemplo bytes 0-1048575/5242880
+        schema: { type: string }
+    put:
+      summary: Enviar un fragmento con checksum obligatorio
+      operationId: uploadChunk
+      requestBody:
+        required: true
+        content: { application/octet-stream: { schema: { type: string, format: binary } } }
+      responses:
+        '204': { description: Fragmento aceptado }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+        '413': { $ref: '#/components/responses/PayloadTooLargeError' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaTypeError' }
+  /uploads/{uploadId}:
+    parameters: [{ $ref: '#/components/parameters/UploadId' }]
+    get:
+      summary: Consultar estado para reanudar una subida
+      operationId: getUpload
+      responses:
+        '200': { description: Estado de subida, content: { application/json: { schema: { $ref: '#/components/schemas/UploadStatus' } } } }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    delete:
+      summary: Cancelar subida y liberar reserva
+      operationId: cancelUpload
+      responses:
+        '204': { description: Subida cancelada }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /uploads/{uploadId}/complete:
+    parameters: [{ $ref: '#/components/parameters/UploadId' }]
+    post:
+      summary: Completar subida y encolar transcodificación
+      operationId: completeUpload
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CompleteUploadRequest' } } }
+      responses:
+        '202': { description: Procesamiento iniciado, content: { application/json: { schema: { $ref: '#/components/schemas/ProcessingStatus' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+  /videos/{videoId}/manifest.mpd:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    get:
+      summary: Obtener manifiesto MPEG-DASH
+      operationId: getManifest
+      responses:
+        '200': { description: Manifiesto DASH, content: { application/dash+xml: { schema: { type: string } } } }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /videos/{videoId}/dash/{path}:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+      - name: path
+        in: path
+        required: true
+        schema: { type: string }
+      - name: Range
+        in: header
+        schema: { type: string }
+    get:
+      summary: Servir segmento DASH con soporte Range
+      operationId: getDashSegment
+      responses:
+        '200': { description: Segmento DASH, headers: { Cache-Control: { schema: { type: string, example: public, max-age=31536000, immutable } } }, content: { video/mp4: { schema: { type: string, format: binary } }, audio/mp4: { schema: { type: string, format: binary } } } }
+        '206': { description: Rango parcial }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /videos/{videoId}/thumbnail:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    get:
+      summary: Obtener miniatura protegida por JWT
+      operationId: getThumbnail
+      responses:
+        '200': { description: Miniatura, content: { image/jpeg: { schema: { type: string, format: binary } }, image/png: { schema: { type: string, format: binary } } } }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /videos/{videoId}/processing:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    get:
+      summary: Consultar procesamiento
+      operationId: getProcessing
+      responses:
+        '200': { description: Estado de procesamiento, content: { application/json: { schema: { $ref: '#/components/schemas/ProcessingStatus' } } } }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /health:
+    get:
+      security: []
+      responses: { '200': { $ref: '#/components/responses/HealthResponse' } }
+  /ready:
+    get:
+      security: []
+      responses: { '200': { $ref: '#/components/responses/HealthResponse' }, '503': { $ref: '#/components/responses/ServiceUnavailableError' } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT, description: JWT HS256 con duración configurable; sin refresh }
+  parameters:
+    VideoId: { name: videoId, in: path, required: true, schema: { type: string, format: uuid } }
+    UploadId: { name: uploadId, in: path, required: true, schema: { type: string, format: uuid } }
+  schemas:
+    StartUploadRequest:
+      type: object
+      required: [sizeBytes, totalChunks, fileChecksum, contentType]
+      properties:
+        sizeBytes: { type: integer, format: int64, minimum: 1 }
+        totalChunks: { type: integer, minimum: 1 }
+        chunkSizeBytes: { type: integer, minimum: 1, readOnly: true }
+        fileChecksum: { type: string, pattern: '^[A-Fa-f0-9]{64}$' }
+        contentType: { type: string, enum: [video/mp4, video/webm, video/quicktime, video/x-matroska] }
+    UploadStatus:
+      type: object
+      required: [uploadId, videoId, status, sizeBytes, receivedChunks, totalChunks]
+      properties:
+        uploadId: { type: string, format: uuid }
+        videoId: { type: string, format: uuid }
+        status: { type: string, enum: [active, completing, processing, completed, cancelled, failed] }
+        sizeBytes: { type: integer, format: int64 }
+        chunkSizeBytes: { type: integer, minimum: 1 }
+        receivedChunks: { type: array, items: { type: integer, minimum: 0 } }
+        totalChunks: { type: integer, minimum: 1 }
+        receivedBytes: { type: integer, format: int64, minimum: 0 }
+    CompleteUploadRequest:
+      type: object
+      required: [fileChecksum]
+      properties: { fileChecksum: { type: string, pattern: '^[A-Fa-f0-9]{64}$' } }
+    ProcessingStatus:
+      type: object
+      required: [videoId, status]
+      properties:
+        videoId: { type: string, format: uuid }
+        status: { type: string, enum: [processing, ready, failed] }
+        durationSeconds: { type: integer, minimum: 0, nullable: true }
+        error: { type: string, nullable: true }
+    ApiError:
+      type: object
+      required: [code, message, details, traceId]
+      properties: { code: { type: string }, message: { type: string }, details: { nullable: true }, traceId: { type: string } }
+  responses:
+    ValidationError: { description: Validación fallida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    ForbiddenError: { description: Sin permisos, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    QuotaError: { description: Cuota insuficiente, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    ConflictError: { description: Estado conflictivo, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    NotFoundError: { description: No encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    PayloadTooLargeError: { description: Fragmento o archivo demasiado grande, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    UnsupportedMediaTypeError: { description: Tipo no soportado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    HealthResponse: { description: Estado del servicio, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string } } } } } }
+    ServiceUnavailableError: { description: Servicio no listo, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }

@@ -1,0 +1,307 @@
+openapi: 3.0.3
+info:
+  title: Tecflix Users API
+  version: 1.0.0
+  description: Usuarios, autenticación JWT HS256 y cuota inmutable.
+servers:
+  - url: http://localhost:8081/api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Users
+  - name: Quota
+paths:
+  /users:
+    post:
+      tags: [Users]
+      security: []
+      summary: Registrar usuario
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUserRequest' }
+      responses:
+        '201':
+          description: Usuario creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+    get:
+      tags: [Users]
+      summary: Buscar usuarios por username o email
+      operationId: listUsers
+      parameters:
+        - $ref: '#/components/parameters/UsernameQuery'
+        - $ref: '#/components/parameters/EmailQuery'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Página de usuarios
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Iniciar sesión
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: JWT de duración configurable por JWT_EXPIRATION_SECONDS; no existe refresh token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Obtener el usuario autenticado
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Usuario actual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+    patch:
+      tags: [Users]
+      summary: Actualizar email del usuario autenticado
+      operationId: updateCurrentUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUserRequest' }
+      responses:
+        '200':
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+  /users/me/quota:
+    get:
+      tags: [Quota]
+      summary: Consultar cuota propia
+      operationId: getMyQuota
+      responses:
+        '200':
+          description: Cuota inmutable y uso actual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Quota' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+  /users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      summary: Obtener usuario público o propio
+      operationId: getUser
+      responses:
+        '200':
+          description: Usuario visible según privacidad
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    patch:
+      tags: [Users]
+      summary: Actualizar usuario; username y cuota no son editables
+      operationId: updateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUserRequest' }
+      responses:
+        '200':
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+    delete:
+      tags: [Users]
+      summary: Eliminar usuario
+      operationId: deleteUser
+      responses:
+        '204': { description: Usuario eliminado }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /internal/quota/reservations:
+    post:
+      tags: [Quota]
+      security: [serviceToken: []]
+      summary: Crear reserva idempotente de cuota
+      operationId: reserveQuota
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReservationRequest' }
+      responses:
+        '201':
+          description: Reserva creada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reservation' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+  /internal/quota/reservations/{reservationId}/settle:
+    post:
+      tags: [Quota]
+      security: [serviceToken: []]
+      summary: Ajustar una reserva al tamaño final
+      operationId: settleQuotaReservation
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [finalBytes]
+              properties: { finalBytes: { type: integer, format: int64, minimum: 0 } }
+      responses:
+        '200':
+          description: Reserva ajustada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reservation' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /internal/quota/reservations/{reservationId}/release:
+    post:
+      tags: [Quota]
+      security: [serviceToken: []]
+      summary: Liberar reserva
+      operationId: releaseQuotaReservation
+      parameters:
+        - $ref: '#/components/parameters/ReservationId'
+      responses:
+        '204': { description: Reserva liberada }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /health:
+    get:
+      security: []
+      responses: { '200': { $ref: '#/components/responses/HealthResponse' } }
+  /ready:
+    get:
+      security: []
+      responses: { '200': { $ref: '#/components/responses/HealthResponse' }, '503': { $ref: '#/components/responses/ServiceUnavailableError' } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT, description: JWT HS256; duración configurable; sin refresh }
+    serviceToken: { type: http, scheme: bearer, description: Token interno de servicio, distinto del JWT de usuario }
+  parameters:
+    UserId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    ReservationId: { name: reservationId, in: path, required: true, schema: { type: string, format: uuid } }
+    UsernameQuery: { name: username, in: query, schema: { type: string } }
+    EmailQuery: { name: email, in: query, schema: { type: string, format: email } }
+    PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+  schemas:
+    CreateUserRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 64, pattern: '^[A-Za-z0-9_.-]+$' }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, format: password }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties: { username: { type: string }, password: { type: string, format: password } }
+    UpdateUserRequest:
+      type: object
+      minProperties: 1
+      properties: { email: { type: string, format: email } }
+      additionalProperties: false
+    User:
+      type: object
+      required: [id, username]
+      properties: { id: { type: string, format: uuid }, username: { type: string } }
+    Me:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          required: [email, quotaBytes, usedBytes]
+          properties:
+            email: { type: string, format: email }
+            quotaBytes: { type: integer, format: int64, readOnly: true }
+            usedBytes: { type: integer, format: int64, readOnly: true }
+    LoginResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn, user]
+      properties:
+        accessToken: { type: string }
+        tokenType: { type: string, enum: [Bearer] }
+        expiresIn: { type: integer, format: int64, description: Segundos configurados para la expiración del JWT }
+        user: { $ref: '#/components/schemas/Me' }
+    Quota:
+      type: object
+      required: [quotaBytes, usedBytes, remainingBytes]
+      properties:
+        quotaBytes: { type: integer, format: int64, readOnly: true }
+        usedBytes: { type: integer, format: int64, readOnly: true }
+        remainingBytes: { type: integer, format: int64, readOnly: true }
+    UserPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/User' } }
+        nextCursor: { type: string, nullable: true }
+    ReservationRequest:
+      type: object
+      required: [reservationId, userId, bytes]
+      properties:
+        reservationId: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        bytes: { type: integer, format: int64, minimum: 0 }
+        expiresAt: { type: string, format: date-time }
+    Reservation:
+      allOf:
+        - $ref: '#/components/schemas/ReservationRequest'
+        - type: object
+          required: [status, createdAt]
+          properties:
+            status: { type: string, enum: [active, settled, released, expired] }
+            createdAt: { type: string, format: date-time }
+    ApiError:
+      type: object
+      required: [code, message, details, traceId]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { nullable: true }
+        traceId: { type: string }
+  responses:
+    ValidationError: { description: Error de validación, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    UnauthorizedError: { description: Token ausente, inválido o expirado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    ForbiddenError: { description: Operación no permitida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    ConflictError: { description: Conflicto, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    NotFoundError: { description: No encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    ServiceUnavailableError: { description: Servicio no listo, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    HealthResponse: { description: Estado del servicio, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [ok, ready] } } } } } }
