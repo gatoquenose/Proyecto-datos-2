@@ -34,7 +34,7 @@ export function ProfilePage(): JSX.Element {
   };
   return <section className="profile-page"><h1>Mi perfil</h1>{message && <p className="success-box" role="status">{message}</p>}
     <div className="card profile-card"><p><strong>Usuario</strong><br />{user.username}<small>El username es inmutable.</small></p>
-      <label>Correo<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} aria-invalid={Boolean(emailError)} aria-describedby={emailError ? "profile-email-error" : undefined} autoComplete="email" />{emailError && <small id="profile-email-error" className="field-error">{emailError}</small>}</label>
+      <div className="field"><label htmlFor="profile-email">Correo</label><input id="profile-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} aria-invalid={Boolean(emailError)} aria-describedby={emailError ? "profile-email-error" : undefined} autoComplete="email" />{emailError && <small id="profile-email-error" className="field-error">{emailError}</small>}</div>
       <button type="button" className="button primary" onClick={saveEmail} disabled={update.isPending}>Guardar correo</button>
     </div>
     <div className="card"><h2>Almacenamiento</h2><QuotaBar quotaBytes={quota.data.quotaBytes} usedBytes={quota.data.usedBytes} /></div>

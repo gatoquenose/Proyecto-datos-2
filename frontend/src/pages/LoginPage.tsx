@@ -77,7 +77,7 @@ export function RegisterPage(): JSX.Element {
 
 function Field({ label, name, type = "text", value, onChange, error, autoComplete, hint }: { label: string; name: string; type?: string; value: string; onChange: (value: string) => void; error?: string; autoComplete: string; hint?: string }): JSX.Element {
   const errorId = `${name}-error`;
-  return <label>{label}<input id={name} name={name} type={type} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : hint ? `${name}-hint` : undefined} />{hint && <small id={`${name}-hint`}>{hint}</small>}{error && <small id={errorId} className="field-error">{error}</small>}</label>;
+  return <div className="field"><label htmlFor={name}>{label}</label><input id={name} name={name} type={type} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : hint ? `${name}-hint` : undefined} />{hint && <small id={`${name}-hint`}>{hint}</small>}{error && <small id={errorId} className="field-error">{error}</small>}</div>;
 }
 
 function AuthForm({ title, error, onSubmit, footer, children }: { title: string; error?: string; onSubmit: (event: FormEvent) => Promise<void>; footer: JSX.Element; children: JSX.Element[] }): JSX.Element {
