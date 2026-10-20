@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
-export function ConfirmDialog({ title, children, confirmLabel, onConfirm, onCancel }: { title: string; children: ReactNode; confirmLabel: string; onConfirm: () => void; onCancel: () => void }): JSX.Element {
+export function ConfirmDialog({ title, children, confirmLabel, confirmDisabled = false, onConfirm, onCancel }: { title: string; children: ReactNode; confirmLabel: string; confirmDisabled?: boolean; onConfirm: () => void; onCancel: () => void }): JSX.Element {
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -8,7 +8,7 @@ export function ConfirmDialog({ title, children, confirmLabel, onConfirm, onCanc
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") onCancel();
       if (event.key !== "Tab" || !dialogRef.current) return;
-      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>("button, [href], input"));
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>("button:not([disabled]), [href], input:not([disabled])"));
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -19,6 +19,6 @@ export function ConfirmDialog({ title, children, confirmLabel, onConfirm, onCanc
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onCancel]);
   return <div className="dialog-backdrop" role="presentation"><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title" ref={dialogRef}>
-    <h2 id="dialog-title">{title}</h2><div>{children}</div><div className="dialog-actions"><button type="button" ref={cancelRef} onClick={onCancel}>Cancelar</button><button type="button" className="button primary" onClick={onConfirm}>{confirmLabel}</button></div>
+    <h2 id="dialog-title">{title}</h2><div>{children}</div><div className="dialog-actions"><button type="button" ref={cancelRef} onClick={onCancel}>Cancelar</button><button type="button" className="button primary" onClick={onConfirm} disabled={confirmDisabled}>{confirmLabel}</button></div>
   </div></div>;
 }

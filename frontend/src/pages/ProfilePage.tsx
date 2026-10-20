@@ -39,7 +39,7 @@ export function ProfilePage(): JSX.Element {
     </div>
     <div className="card"><h2>Almacenamiento</h2><QuotaBar quotaBytes={quota.data.quotaBytes} usedBytes={quota.data.usedBytes} /></div>
     <div className="card danger-zone"><h2>Eliminar cuenta</h2><p>Esta acción no se puede deshacer.</p><button type="button" className="button danger" onClick={() => setShowDelete(true)}>Eliminar mi cuenta</button></div>
-    {showDelete && <ConfirmDialog title="Confirmar eliminación de cuenta" confirmLabel="Eliminar cuenta" onCancel={() => { setShowDelete(false); setConfirmation(""); }} onConfirm={() => { if (confirmation === user.username) remove.mutate(); }}>
+    {showDelete && <ConfirmDialog title="Confirmar eliminación de cuenta" confirmLabel="Eliminar cuenta" confirmDisabled={confirmation !== user.username} onCancel={() => { setShowDelete(false); setConfirmation(""); }} onConfirm={() => { if (confirmation === user.username) remove.mutate(); }}>
       <p>Escribe <strong>{user.username}</strong> para confirmar.</p><input aria-label="Confirmar username" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" />
       {confirmation && confirmation !== user.username && <small className="field-error">El username no coincide.</small>}
     </ConfirmDialog>}
