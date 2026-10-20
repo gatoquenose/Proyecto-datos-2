@@ -47,4 +47,11 @@ export const handlers = [
     const items = filtered.slice(cursor, cursor + pageSize);
     return HttpResponse.json({ items, nextCursor: cursor + pageSize < filtered.length ? String(cursor + pageSize) : null });
   }),
+  http.get("http://localhost:8083/api/v1/videos/:videoId/thumbnail", ({ request }) => {
+    if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
+    return new HttpResponse(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), {
+      status: 200,
+      headers: { "Content-Type": "image/png" },
+    });
+  }),
 ];

@@ -1,5 +1,7 @@
 import type { components } from "../types/generated/metadata";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuthedImage } from "../hooks/useAuthedImage";
 
 type Video = components["schemas"]["Video"];
 
@@ -7,8 +9,24 @@ const formatDuration = (seconds: number): string => `${Math.floor(seconds / 60)}
 const formatDate = (value: string): string => new Intl.DateTimeFormat("es-MX", { dateStyle: "medium" }).format(new Date(value));
 
 export function VideoCard({ video, showOwnerDetails }: { video: Video; showOwnerDetails: boolean }): JSX.Element {
+  const thumbnailRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const { url, failed } = useAuthedImage(video.id, isVisible);
+
+  useEffect(() => {
+    const element = thumbnailRef.current;
+    if (!element || !("IntersectionObserver" in window)) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) setIsVisible(true);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   return <article className="card video-card">
-    <div className="thumbnail" role="img" aria-label={`Miniatura de ${video.title}`}>▶</div>
+    <div ref={thumbnailRef} className="thumbnail" role="img" aria-label={`Miniatura de ${video.title}`}>
+      {url ? <img src={url} alt="" /> : <span>{failed ? "Miniatura no disponible" : "▶"}</span>}
+    </div>
     <div className="video-card-body">
       <h2><Link to={`/videos/${video.id}`}>{video.title}</Link></h2>
       <p>{video.ownerUsername}</p>

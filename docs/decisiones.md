@@ -34,3 +34,17 @@
 - `react-router-dom`, TanStack Query, MSW, Shaka Player, `@noble/hashes`,
   Vitest, Testing Library, and jsdom support routing, server-state caching,
   contract mocks, DASH playback, SHA-256 fallback, and required tests.
+
+## Propuesta de linting frontend
+
+- `eslint` se propone como dependencia de desarrollo para detectar errores de
+  calidad y consistencia antes del build.
+- `eslint-plugin-react-hooks` se propone para validar las reglas de hooks,
+  especialmente el orden estable de hooks que una prueba de F3 tuvo que
+  detectar manualmente.
+- `typescript-eslint` se propone para que ESLint analice el TypeScript del
+  frontend con reglas tipadas y reduzca errores que `tsc` no identifica como
+  problemas de estilo o uso de React.
+
+Estas dependencias aún no están instaladas ni configuradas; la propuesta se
+revisará antes de modificar el manifiesto o añadir un script de lint.

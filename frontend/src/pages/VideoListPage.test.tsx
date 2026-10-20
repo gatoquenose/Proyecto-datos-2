@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VideoListPage } from "./VideoListPage";
 
@@ -45,11 +45,12 @@ describe("VideoListPage", () => {
   it("acumula páginas al pulsar Cargar más", async () => {
     metadata.listVideos
       .mockResolvedValueOnce({ items: [video("1", "Primera página")], nextCursor: "cursor-2" })
-      .mockResolvedValueOnce({ items: [video("2", "Segunda página", "owner-2")], nextCursor: null });
+      .mockResolvedValueOnce({ items: [video("1", "Duplicado"), video("2", "Segunda página", "owner-2")], nextCursor: null });
     renderPage("/videos");
     expect(await screen.findByRole("heading", { name: "Primera página" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cargar más" }));
     expect(await screen.findByRole("heading", { name: "Segunda página" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: /Primera página|Duplicado/ })).toHaveLength(1);
     expect(metadata.listVideos).toHaveBeenLastCalledWith({ sortBy: "uploadedAt", order: "desc", q: undefined, pageSize: 12, cursor: "cursor-2" });
   });
 
@@ -62,12 +63,54 @@ describe("VideoListPage", () => {
     await screen.findByRole("heading", { name: "Inicial" });
     fireEvent.change(screen.getByRole("searchbox", { name: "Buscar videos" }), { target: { value: "resultado" } });
     await waitFor(() => expect(metadata.listVideos).toHaveBeenLastCalledWith({ sortBy: "uploadedAt", order: "desc", q: "resultado", pageSize: 12, cursor: undefined }), { timeout: 1000 });
+    expect(await screen.findByRole("heading", { name: "Resultado" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Ordenar por"), { target: { value: "title" } });
     await waitFor(() => expect(metadata.listVideos).toHaveBeenLastCalledWith({ sortBy: "title", order: "desc", q: "resultado", pageSize: 12, cursor: undefined }));
   });
+
+  it("restaura q, sortBy y order desde la URL y anuncia el conteo", async () => {
+    metadata.listVideos.mockResolvedValueOnce({ items: [video("1", "Resultado")], nextCursor: null });
+    renderPage("/videos?q=resultado&sortBy=title&order=asc");
+    expect(await screen.findByRole("heading", { name: "Resultado" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Buscar videos" })).toHaveValue("resultado");
+    expect(screen.getByLabelText("Ordenar por")).toHaveValue("title");
+    expect(screen.getByLabelText("Dirección")).toHaveValue("asc");
+    expect(screen.getByText("1 video encontrado")).toBeInTheDocument();
+    expect(metadata.listVideos).toHaveBeenCalledWith({ sortBy: "title", order: "asc", q: "resultado", pageSize: 12, cursor: undefined });
+  });
+
+  it("restaura los parámetros anteriores al pulsar Atrás", async () => {
+    metadata.listVideos
+      .mockResolvedValueOnce({ items: [video("1", "Filtrado")], nextCursor: null })
+      .mockResolvedValueOnce({ items: [video("2", "Inicial")], nextCursor: null });
+    renderPage(["/videos", "/videos?q=filtrado&sortBy=title&order=asc"], 1);
+    expect(await screen.findByRole("heading", { name: "Filtrado" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Atrás" }));
+    expect(await screen.findByRole("heading", { name: "Inicial" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Buscar videos" })).toHaveValue("");
+    expect(metadata.listVideos).toHaveBeenLastCalledWith({ owner: undefined, sortBy: "uploadedAt", order: "desc", q: undefined, pageSize: 12, cursor: undefined });
+  });
+
+  it("muestra estado vacío y permite reintentar un error", async () => {
+    metadata.listVideos
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce({ items: [], nextCursor: null });
+    renderPage("/videos");
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByText("No hay videos para mostrar.")).toBeInTheDocument();
+    expect(screen.getByText("0 videos encontrados")).toBeInTheDocument();
+  });
 });
 
-function renderPage(path: string): void {
+function renderPage(path: string | string[], initialIndex?: number): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><VideoListPage /></MemoryRouter></QueryClientProvider>);
+  const initialEntries = Array.isArray(path) ? path : [path];
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={initialEntries} initialIndex={initialIndex}><VideoListPage /><LocationProbe /></MemoryRouter></QueryClientProvider>);
+}
+
+function LocationProbe(): JSX.Element {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return <><output data-testid="location">{location.search}</output><button type="button" onClick={() => navigate(-1)}>Atrás</button></>;
 }
