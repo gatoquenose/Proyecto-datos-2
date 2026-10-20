@@ -22,7 +22,7 @@ describe("aviso de sesión expirada", () => {
   });
 
   it("no aparece después de cerrar sesión voluntariamente", async () => {
-    authStore.setSession("jwt", { id: "1", username: "ana.tec", email: "ana@test.com" });
+    authStore.setSession("jwt", { id: "1", username: "ana.tec", email: "ana@test.com", quotaBytes: 100, usedBytes: 25 });
     users.getCurrentUser.mockResolvedValueOnce({ id: "1", username: "ana.tec", email: "ana@test.com" });
     function ProtectedContent(): JSX.Element {
       const { logout } = useAuth();

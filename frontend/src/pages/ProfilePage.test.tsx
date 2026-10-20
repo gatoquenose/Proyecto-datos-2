@@ -12,7 +12,7 @@ vi.mock("../api/usersClient", () => ({ usersClient: users }));
 
 describe("ProfilePage", () => {
   beforeEach(() => {
-    authStore.setSession("jwt", { id: "1", username: "ana.tec", email: "ana@test.com" });
+    authStore.setSession("jwt", { id: "1", username: "ana.tec", email: "ana@test.com", quotaBytes: 100, usedBytes: 25 });
     users.getCurrentUser.mockResolvedValue({ id: "1", username: "ana.tec", email: "ana@test.com" });
     users.getMyQuota.mockResolvedValue({ quotaBytes: 100, usedBytes: 25, remainingBytes: 75 });
     users.updateUser.mockReset();
