@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       }
     };
     void restore();
-  }, []);
+  }, [navigate]);
   useEffect(() => {
     setUnauthorizedHandler((path) => {
       authStore.clear();
@@ -46,18 +46,21 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     });
     return () => setUnauthorizedHandler(null);
   }, [navigate]);
-  const value = useMemo(() => ({
-    token: authStore.getToken(),
-    user: authStore.getUser(),
-    ready,
-    sessionExpired,
-    login: (token: string, user: NonNullable<ReturnType<typeof authStore.getUser>>) => {
-      authStore.setSession(token, user);
-      setSessionExpired(false);
-    },
-    clearSessionExpired: () => setSessionExpired(false),
-    logout: () => { authStore.clear(); setSessionExpired(false); navigate("/login"); },
-  }), [ready, sessionExpired, snapshot, navigate]);
+  const value = useMemo(() => {
+    void snapshot;
+    return {
+      token: authStore.getToken(),
+      user: authStore.getUser(),
+      ready,
+      sessionExpired,
+      login: (token: string, user: NonNullable<ReturnType<typeof authStore.getUser>>) => {
+        authStore.setSession(token, user);
+        setSessionExpired(false);
+      },
+      clearSessionExpired: () => setSessionExpired(false),
+      logout: () => { authStore.clear(); setSessionExpired(false); navigate("/login"); },
+    };
+  }, [ready, sessionExpired, snapshot, navigate]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

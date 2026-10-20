@@ -27,7 +27,7 @@ export function useAuthedImage(videoId: string, enabled: boolean): AuthedImageSt
         const blob = await response.blob();
         objectUrl = URL.createObjectURL(blob);
         setState({ url: objectUrl, failed: false });
-      } catch (error) {
+      } catch {
         if (controller.signal.aborted) return;
         setState({ url: null, failed: true });
       }

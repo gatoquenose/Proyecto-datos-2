@@ -1,5 +1,5 @@
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { metadataClient } from "../api/metadataClient";
 import { useAuth } from "../auth/AuthContext";
@@ -20,17 +20,24 @@ export function VideoListPage(): JSX.Element {
   const sortBy = (params.get("sortBy") as "title" | "author" | "uploadedAt" | null) ?? "uploadedAt";
   const order = (params.get("order") as "asc" | "desc" | null) ?? "desc";
   const [searchInput, setSearchInput] = useState(search);
+  const paramsRef = useRef(params);
+  useEffect(() => {
+    paramsRef.current = params;
+  }, [params]);
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      const next = new URLSearchParams(params);
+      const next = new URLSearchParams(paramsRef.current);
       if (searchInput) next.set("q", searchInput);
       else next.delete("q");
       next.delete("cursor");
       setParams(next, { replace: true });
     }, 300);
     return () => window.clearTimeout(timeout);
-  }, [searchInput]);
-  useEffect(() => setSearchInput(search), [search]);
+  }, [searchInput, setParams]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setSearchInput(search), 0);
+    return () => window.clearTimeout(timeout);
+  }, [search]);
   const query = useInfiniteQuery({
     queryKey: ["videos", owner, sortBy, order, search],
     queryFn: ({ pageParam }) => metadataClient.listVideos({ owner, sortBy, order, q: search || undefined, pageSize: 12, cursor: pageParam }),

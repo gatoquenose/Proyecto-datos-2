@@ -1,4 +1,4 @@
-import type { components, paths } from "../types/generated/metadata";
+import type { components } from "../types/generated/metadata";
 import { request } from "./httpClient";
 
 type Video = components["schemas"]["Video"];

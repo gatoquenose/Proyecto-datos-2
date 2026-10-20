@@ -46,5 +46,15 @@
   frontend con reglas tipadas y reduzca errores que `tsc` no identifica como
   problemas de estilo o uso de React.
 
-Estas dependencias aún no están instaladas ni configuradas; la propuesta se
-revisará antes de modificar el manifiesto o añadir un script de lint.
+Estas dependencias se instalaron después de aprobar la propuesta y quedaron
+configuradas en `frontend/eslint.config.mjs`.
+
+La propuesta fue aprobada y se instaló con Node `v22.16.0`: `eslint@9.39.5`
+ejecuta el lint con la configuración flat; `typescript-eslint@8.72.0` aporta
+parser y reglas para TypeScript; `eslint-plugin-react-hooks@7.1.1` detecta
+violaciones de las reglas de hooks, incluido el orden estable que ya causó un
+bug en F3; y `eslint-plugin-jsx-a11y@6.10.2` valida patrones de accesibilidad
+en JSX. `eslint-plugin-jsx-a11y` se añadió porque las pantallas y controles
+del frontend necesitan validación automatizada de labels, roles y atributos
+ARIA. Todas son dependencias de desarrollo y se configuraron sin flags de
+forzado.
