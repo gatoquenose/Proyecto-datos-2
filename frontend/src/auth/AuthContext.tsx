@@ -8,7 +8,9 @@ interface AuthContextValue {
   token: string | null;
   user: ReturnType<typeof authStore.getUser>;
   ready: boolean;
+  sessionExpired: boolean;
   login: (token: string, user: NonNullable<ReturnType<typeof authStore.getUser>>) => void;
+  clearSessionExpired: () => void;
   logout: () => void;
 }
 
@@ -18,6 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
   const snapshot = useSyncExternalStore(authStore.subscribe, () => `${authStore.getToken()}:${authStore.getUser()?.id ?? ""}`);
   const navigate = useNavigate();
   const [ready, setReady] = useState(!authStore.getToken());
+  const [sessionExpired, setSessionExpired] = useState(false);
   useEffect(() => {
     const restore = async (): Promise<void> => {
       if (!authStore.getToken()) {
@@ -38,7 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
   useEffect(() => {
     setUnauthorizedHandler((path) => {
       authStore.clear();
-      navigate(`/login?returnTo=${encodeURIComponent(path)}`, { replace: true, state: { message: "Tu sesión expiró." } });
+      setSessionExpired(true);
+      navigate(`/login?returnTo=${encodeURIComponent(path)}`, { replace: true });
     });
     return () => setUnauthorizedHandler(null);
   }, [navigate]);
@@ -46,9 +50,14 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     token: authStore.getToken(),
     user: authStore.getUser(),
     ready,
-    login: (token: string, user: NonNullable<ReturnType<typeof authStore.getUser>>) => authStore.setSession(token, user),
-    logout: () => { authStore.clear(); navigate("/login"); },
-  }), [ready, snapshot, navigate]);
+    sessionExpired,
+    login: (token: string, user: NonNullable<ReturnType<typeof authStore.getUser>>) => {
+      authStore.setSession(token, user);
+      setSessionExpired(false);
+    },
+    clearSessionExpired: () => setSessionExpired(false),
+    logout: () => { authStore.clear(); setSessionExpired(false); navigate("/login"); },
+  }), [ready, sessionExpired, snapshot, navigate]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

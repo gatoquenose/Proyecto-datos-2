@@ -6,14 +6,14 @@ import { useAuth } from "../auth/AuthContext";
 import { type FieldErrors, validateEmail, validatePassword, validateUsername } from "../utils/validation";
 
 export function LoginPage(): JSX.Element {
-  const { login } = useAuth();
+  const { login, sessionExpired } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const location = useLocation();
   const [form, setForm] = useState({ username: "", password: "" });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState("");
-  const expiryMessage = (location.state as { message?: string } | null)?.message;
+  const expiryMessage = sessionExpired ? "Tu sesión expiró." : (location.state as { message?: string } | null)?.message;
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     const nextErrors: FieldErrors = {};
