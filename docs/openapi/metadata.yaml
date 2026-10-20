@@ -3,13 +3,22 @@ info:
   title: Tecflix Metadata API
   version: 1.0.0
   description: Metadata de videos, visibilidad y listado cursor-based en MongoDB.
+  license:
+    name: UNLICENSED
+    url: https://opensource.org/license/mit
 servers:
   - url: http://localhost:8082/api/v1
 security:
   - bearerAuth: []
+tags:
+  - name: Videos
+    description: Metadata, visibilidad y listado de videos.
+  - name: Internal
+    description: Notificaciones internas entre servicios.
 paths:
   /videos:
     post:
+      tags: [Videos]
       summary: Crear metadata de video
       operationId: createVideo
       requestBody:
@@ -24,6 +33,7 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/UnauthorizedError' }
     get:
+      tags: [Videos]
       summary: Listar videos públicos y propios con orden y cursor en MongoDB
       operationId: listVideos
       parameters:
@@ -45,6 +55,7 @@ paths:
   /videos/{id}:
     parameters: [{ $ref: '#/components/parameters/VideoId' }]
     get:
+      tags: [Videos]
       summary: Consultar video
       operationId: getVideo
       responses:
@@ -52,6 +63,7 @@ paths:
         '401': { $ref: '#/components/responses/UnauthorizedError' }
         '404': { $ref: '#/components/responses/NotFoundError' }
     patch:
+      tags: [Videos]
       summary: Actualizar metadata editable del dueño
       operationId: updateVideo
       requestBody:
@@ -64,6 +76,7 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenError' }
         '404': { $ref: '#/components/responses/NotFoundError' }
     delete:
+      tags: [Videos]
       summary: Eliminar video del dueño y coordinar borrado físico
       operationId: deleteVideo
       responses:
@@ -74,6 +87,7 @@ paths:
   /videos/{id}/visibility:
     parameters: [{ $ref: '#/components/parameters/VideoId' }]
     patch:
+      tags: [Videos]
       summary: Cambiar visibilidad del dueño
       operationId: updateVideoVisibility
       requestBody:
@@ -92,8 +106,10 @@ paths:
   /internal/videos/{id}/processing-complete:
     parameters: [{ $ref: '#/components/parameters/VideoId' }]
     post:
+      tags: [Internal]
       security: [serviceToken: []]
       summary: Notificar procesamiento exitoso
+      operationId: notifyProcessingComplete
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/ProcessingCompleteRequest' } } }
@@ -101,8 +117,10 @@ paths:
   /internal/videos/{id}/processing-failed:
     parameters: [{ $ref: '#/components/parameters/VideoId' }]
     post:
+      tags: [Internal]
       security: [serviceToken: []]
       summary: Notificar fallo de procesamiento
+      operationId: notifyProcessingFailed
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/ProcessingFailedRequest' } } }
@@ -110,15 +128,21 @@ paths:
   /internal/videos/{id}/streaming-deleted:
     parameters: [{ $ref: '#/components/parameters/VideoId' }]
     post:
+      tags: [Internal]
       security: [serviceToken: []]
       summary: Confirmar borrado físico en streaming
+      operationId: notifyStreamingDeleted
       responses: { '204': { description: Confirmación recibida }, '404': { $ref: '#/components/responses/NotFoundError' } }
   /health:
     get:
+      summary: Consultar estado de salud
+      operationId: getHealth
       security: []
       responses: { '200': { $ref: '#/components/responses/HealthResponse' } }
   /ready:
     get:
+      summary: Consultar disponibilidad del servicio
+      operationId: getReady
       security: []
       responses: { '200': { $ref: '#/components/responses/HealthResponse' }, '503': { $ref: '#/components/responses/ServiceUnavailableError' } }
 components:
@@ -138,6 +162,7 @@ components:
     CreateVideoRequest:
       type: object
       required: [title, description, author, topic, tags, visibility, sizeBytes]
+      example: { title: Introducción a algoritmos, description: Curso de estructuras de datos, author: Ana TEC, topic: Algoritmos, tags: [árboles, grafos], uploadedAt: '2026-10-19T22:00:00Z', visibility: private, sizeBytes: 104857600 }
       properties:
         title: { type: string, minLength: 1, maxLength: 200 }
         description: { type: string, maxLength: 5000 }
@@ -177,9 +202,11 @@ components:
         status: { $ref: '#/components/schemas/VideoStatus' }
         createdAt: { type: string, format: date-time, readOnly: true }
         updatedAt: { type: string, format: date-time, readOnly: true }
+      example: { id: 550e8400-e29b-41d4-a716-446655440000, ownerId: 650e8400-e29b-41d4-a716-446655440000, ownerUsername: ana.tec, title: Introducción a algoritmos, description: Curso de estructuras de datos, author: Ana TEC, topic: Algoritmos, tags: [árboles, grafos], durationSeconds: 240, uploadedAt: '2026-10-19T22:00:00Z', visibility: private, sizeBytes: 104857600, status: ready, createdAt: '2026-10-19T21:55:00Z', updatedAt: '2026-10-19T22:05:00Z' }
     VideoPage:
       type: object
       required: [items, nextCursor]
+      example: { items: [{ id: 550e8400-e29b-41d4-a716-446655440000, ownerId: 650e8400-e29b-41d4-a716-446655440000, ownerUsername: ana.tec, title: Introducción a algoritmos, description: Curso de estructuras de datos, author: Ana TEC, topic: Algoritmos, tags: [árboles, grafos], durationSeconds: 240, uploadedAt: '2026-10-19T22:00:00Z', visibility: private, sizeBytes: 104857600, status: ready, createdAt: '2026-10-19T21:55:00Z', updatedAt: '2026-10-19T22:05:00Z' }], nextCursor: opaque-cursor }
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Video' } }
         nextCursor: { type: string, nullable: true }
@@ -194,7 +221,8 @@ components:
     ApiError:
       type: object
       required: [code, message, details, traceId]
-      properties: { code: { type: string }, message: { type: string }, details: { nullable: true }, traceId: { type: string } }
+      example: { code: NOT_FOUND, message: Video no encontrado, details: {}, traceId: 01HZX3Y7J8K9M0N1P2Q3R4S5T6 }
+      properties: { code: { type: string, enum: [VALIDATION_ERROR, INVALID_CURSOR, MISSING_TOKEN, INVALID_TOKEN, TOKEN_EXPIRED, FORBIDDEN, QUOTA_EXCEEDED, NOT_FOUND, CONFLICT, USERNAME_EXISTS, EMAIL_EXISTS, INVALID_STATE, PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, UNPROCESSABLE_ENTITY, INTERNAL_ERROR, DEPENDENCY_ERROR, SERVICE_UNAVAILABLE] }, message: { type: string }, details: { type: object, nullable: true, additionalProperties: true }, traceId: { type: string } }
   responses:
     ValidationError: { description: Validación fallida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     UnauthorizedError: { description: Autenticación requerida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }

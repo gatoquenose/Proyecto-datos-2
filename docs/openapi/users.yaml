@@ -3,14 +3,20 @@ info:
   title: Tecflix Users API
   version: 1.0.0
   description: Usuarios, autenticación JWT HS256 y cuota inmutable.
+  license:
+    name: UNLICENSED
+    url: https://opensource.org/license/mit
 servers:
   - url: http://localhost:8081/api/v1
 security:
   - bearerAuth: []
 tags:
   - name: Auth
+    description: Registro y autenticación de usuarios.
   - name: Users
+    description: Consulta, actualización y eliminación de usuarios.
   - name: Quota
+    description: Reservas internas y consulta de cuota.
 paths:
   /users:
     post:
@@ -77,24 +83,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Me' }
-        '401': { $ref: '#/components/responses/UnauthorizedError' }
-    patch:
-      tags: [Users]
-      summary: Actualizar email del usuario autenticado
-      operationId: updateCurrentUser
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/UpdateUserRequest' }
-      responses:
-        '200':
-          description: Usuario actualizado
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Me' }
-        '400': { $ref: '#/components/responses/ValidationError' }
-        '409': { $ref: '#/components/responses/ConflictError' }
         '401': { $ref: '#/components/responses/UnauthorizedError' }
   /users/me/quota:
     get:
@@ -205,16 +193,20 @@ paths:
         '404': { $ref: '#/components/responses/NotFoundError' }
   /health:
     get:
-      security: []
-      responses: { '200': { $ref: '#/components/responses/HealthResponse' } }
+        summary: Consultar estado de salud
+        operationId: getHealth
+        security: []
+        responses: { '200': { $ref: '#/components/responses/HealthResponse' } }
   /ready:
-    get:
-      security: []
-      responses: { '200': { $ref: '#/components/responses/HealthResponse' }, '503': { $ref: '#/components/responses/ServiceUnavailableError' } }
+      get:
+        summary: Consultar disponibilidad del servicio
+        operationId: getReady
+        security: []
+        responses: { '200': { $ref: '#/components/responses/HealthResponse' }, '503': { $ref: '#/components/responses/ServiceUnavailableError' } }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT, description: JWT HS256; duración configurable; sin refresh }
-    serviceToken: { type: http, scheme: bearer, description: Token interno de servicio, distinto del JWT de usuario }
+    serviceToken: { type: http, scheme: bearer, description: 'Token interno de servicio, distinto del JWT de usuario.' }
   parameters:
     UserId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     ReservationId: { name: reservationId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -226,6 +218,10 @@ components:
     CreateUserRequest:
       type: object
       required: [username, email, password]
+      example:
+        username: ana.tec
+        email: ana@example.test
+        password: CorrectHorseBatteryStaple!
       properties:
         username: { type: string, minLength: 3, maxLength: 64, pattern: '^[A-Za-z0-9_.-]+$' }
         email: { type: string, format: email }
@@ -233,6 +229,7 @@ components:
     LoginRequest:
       type: object
       required: [username, password]
+      example: { username: ana.tec, password: CorrectHorseBatteryStaple! }
       properties: { username: { type: string }, password: { type: string, format: password } }
     UpdateUserRequest:
       type: object
@@ -242,6 +239,7 @@ components:
     User:
       type: object
       required: [id, username]
+      example: { id: 550e8400-e29b-41d4-a716-446655440000, username: ana.tec }
       properties: { id: { type: string, format: uuid }, username: { type: string } }
     Me:
       allOf:
@@ -255,6 +253,11 @@ components:
     LoginResponse:
       type: object
       required: [accessToken, tokenType, expiresIn, user]
+      example:
+        accessToken: eyJhbGciOiJIUzI1NiJ9.example.signature
+        tokenType: Bearer
+        expiresIn: 3600
+        user: { id: 550e8400-e29b-41d4-a716-446655440000, username: ana.tec, email: ana@example.test, quotaBytes: 5368709120, usedBytes: 0 }
       properties:
         accessToken: { type: string }
         tokenType: { type: string, enum: [Bearer] }
@@ -263,6 +266,7 @@ components:
     Quota:
       type: object
       required: [quotaBytes, usedBytes, remainingBytes]
+      example: { quotaBytes: 5368709120, usedBytes: 1048576, remainingBytes: 5367660544 }
       properties:
         quotaBytes: { type: integer, format: int64, readOnly: true }
         usedBytes: { type: integer, format: int64, readOnly: true }
@@ -270,12 +274,15 @@ components:
     UserPage:
       type: object
       required: [items, nextCursor]
+      example: { items: [{ id: 550e8400-e29b-41d4-a716-446655440000, username: ana.tec }], nextCursor: opaque-cursor }
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/User' } }
         nextCursor: { type: string, nullable: true }
     ReservationRequest:
       type: object
       required: [reservationId, userId, bytes]
+      description: Repetir la reserva con el mismo reservationId devuelve la reserva existente sin volver a consumir cuota; cambiar sus datos produce CONFLICT.
+      example: { reservationId: 650e8400-e29b-41d4-a716-446655440000, userId: 550e8400-e29b-41d4-a716-446655440000, bytes: 1073741824, expiresAt: '2026-10-20T05:00:00Z' }
       properties:
         reservationId: { type: string, format: uuid }
         userId: { type: string, format: uuid }
@@ -286,22 +293,24 @@ components:
         - $ref: '#/components/schemas/ReservationRequest'
         - type: object
           required: [status, createdAt]
+          description: settle y release son idempotentes por reservationId; repetirlos en el estado final devuelve el estado existente sin aplicar cambios adicionales. Al eliminar un video publicado, metadata confirma el borrado físico y solicita release para liberar los bytes reservados.
           properties:
             status: { type: string, enum: [active, settled, released, expired] }
             createdAt: { type: string, format: date-time }
     ApiError:
       type: object
       required: [code, message, details, traceId]
+      example: { code: VALIDATION_ERROR, message: Datos inválidos, details: { field: email }, traceId: 01HZX3Y7J8K9M0N1P2Q3R4S5T6 }
       properties:
-        code: { type: string }
+        code: { type: string, enum: [VALIDATION_ERROR, INVALID_CURSOR, MISSING_TOKEN, INVALID_TOKEN, TOKEN_EXPIRED, FORBIDDEN, QUOTA_EXCEEDED, NOT_FOUND, CONFLICT, USERNAME_EXISTS, EMAIL_EXISTS, INVALID_STATE, PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, UNPROCESSABLE_ENTITY, INTERNAL_ERROR, DEPENDENCY_ERROR, SERVICE_UNAVAILABLE] }
         message: { type: string }
-        details: { nullable: true }
+        details: { type: object, nullable: true, additionalProperties: true }
         traceId: { type: string }
   responses:
     ValidationError: { description: Error de validación, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    UnauthorizedError: { description: Token ausente, inválido o expirado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    UnauthorizedError: { description: 'Token ausente, inválido o expirado.', content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     ForbiddenError: { description: Operación no permitida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     ConflictError: { description: Conflicto, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     NotFoundError: { description: No encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     ServiceUnavailableError: { description: Servicio no listo, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    HealthResponse: { description: Estado del servicio, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [ok, ready] } } } } } }
+    HealthResponse: { description: Estado del servicio, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [ok, ready] } }, example: { status: ok } } } } }
