@@ -24,6 +24,7 @@ export const friendlyErrorMessage = (code: string): string => {
     MISSING_TOKEN: "Tu sesión es necesaria.",
     INVALID_TOKEN: "Tu sesión ya no es válida.",
     TOKEN_EXPIRED: "Tu sesión expiró.",
+    INVALID_CREDENTIALS: "Usuario o contraseña incorrectos.",
     FORBIDDEN: "No tienes permisos para esta acción.",
     QUOTA_EXCEEDED: "No tienes suficiente cuota disponible.",
     NOT_FOUND: "No encontramos el recurso solicitado.",

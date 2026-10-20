@@ -15,7 +15,7 @@ describe("F2 formularios", () => {
     fireEvent.change(screen.getByLabelText("Usuario"), { target: { value: "ana.tec" } });
     fireEvent.change(screen.getByLabelText("Contraseña"), { target: { value: "incorrecta" } });
     fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Ocurrió un error inesperado."));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Usuario o contraseña incorrectos."));
     expect(screen.queryByText("Tu sesión expiró.")).not.toBeInTheDocument();
   });
   it("mapea EMAIL_EXISTS al campo correo", async () => {
