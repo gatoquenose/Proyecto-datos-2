@@ -9,6 +9,8 @@ export const mockUser: UserComponents["schemas"]["Me"] = {
   usedBytes: 104857600,
 };
 
+export const mockPassword = "CorrectHorseBatteryStaple!";
+
 export const mockVideos: components["schemas"]["Video"][] = Array.from({ length: 30 }, (_, index) => ({
   id: `550e8400-e29b-41d4-a716-44665544${String(index).padStart(4, "0")}`,
   ownerId: index % 3 === 0 ? mockUser.id : `650e8400-e29b-41d4-a716-44665544${String(index).padStart(4, "0")}`,

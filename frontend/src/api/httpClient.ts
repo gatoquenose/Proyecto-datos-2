@@ -1,6 +1,9 @@
 import { ApiError, type ApiErrorBody } from "../types/api";
 
 export type UnauthorizedHandler = (returnPath: string) => void;
+export interface RequestOptions extends RequestInit {
+  handleUnauthorized?: boolean;
+}
 
 let token: string | null = null;
 let unauthorizedHandler: UnauthorizedHandler | null = null;
@@ -30,16 +33,17 @@ const parseError = async (response: Response): Promise<ApiError> => {
 
 export const request = async <T>(
   url: string,
-  init: RequestInit = {},
+  init: RequestOptions = {},
   returnPath = window.location.pathname + window.location.search,
 ): Promise<T> => {
-  const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const { handleUnauthorized = true, ...requestInit } = init;
+  const headers = new Headers(requestInit.headers);
+  if (requestInit.body && !(requestInit.body instanceof Blob) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const response = await fetch(url, { ...init, headers });
+  const response = await fetch(url, { ...requestInit, headers });
   if (!response.ok) {
     const error = await parseError(response);
-    if (response.status === 401) unauthorizedHandler?.(returnPath);
+    if (response.status === 401 && handleUnauthorized) unauthorizedHandler?.(returnPath);
     throw error;
   }
   if (response.status === 204) return undefined as T;

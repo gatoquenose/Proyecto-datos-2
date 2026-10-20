@@ -9,6 +9,10 @@
 - The frontend fetches protected thumbnails with `Authorization` and uses Blob
   URLs. There is no refresh endpoint: expired tokens or any 401 clear the
   session and return to login while preserving the intended route.
+- The effect of account deletion on the user's videos is still pending. The
+  proposed backend behavior is to reject deletion with `409 INVALID_STATE` when
+  the user owns videos; the profile dialog therefore makes no promise about
+  what happens to videos.
 - MongoDB indexes cover `title`, `tags`, and `topic`, use case-insensitive
   collation, and every index query is validated with `explain`.
 - User endpoints return only privacy-scoped data and never expose credentials,

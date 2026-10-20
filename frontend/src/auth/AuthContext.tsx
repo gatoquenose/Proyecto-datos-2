@@ -17,7 +17,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }): JSX.Element {
   const snapshot = useSyncExternalStore(authStore.subscribe, () => `${authStore.getToken()}:${authStore.getUser()?.id ?? ""}`);
   const navigate = useNavigate();
-  const [ready, setReady] = useState(Boolean(snapshot));
+  const [ready, setReady] = useState(!authStore.getToken());
   useEffect(() => {
     const restore = async (): Promise<void> => {
       if (!authStore.getToken()) {
@@ -28,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
         authStore.setUser(await usersClient.getCurrentUser());
       } catch {
         authStore.clear();
+        navigate("/login", { replace: true, state: { message: "Tu sesión ya no es válida." } });
       } finally {
         setReady(true);
       }

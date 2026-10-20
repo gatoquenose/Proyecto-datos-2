@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { mockUser, mockVideos } from "./data";
+import { mockPassword, mockUser, mockVideos } from "./data";
 
 const error = (status: number, code: string, message: string, details: Record<string, unknown> | null = null) =>
   HttpResponse.json({ code, message, details, traceId: "mock-trace-001" }, { status });
@@ -14,13 +14,21 @@ export const handlers = [
   }),
   http.post("http://localhost:8081/api/v1/auth/login", async ({ request }) => {
     const body = await request.json() as { username?: string; password?: string };
-    if (!body.username || !body.password) return error(401, "INVALID_TOKEN", "Credenciales inválidas.");
+    if (body.username !== mockUser.username || body.password !== mockPassword) return error(401, "INVALID_CREDENTIALS", "Usuario o contraseña incorrectos.");
     return HttpResponse.json({ accessToken: "mock-jwt", tokenType: "Bearer", expiresIn: 3600, user: mockUser });
   }),
   http.get("http://localhost:8081/api/v1/users/me", ({ request }) =>
     authorized(request) ? HttpResponse.json(mockUser) : error(401, "MISSING_TOKEN", "Token requerido.")),
   http.get("http://localhost:8081/api/v1/users/me/quota", ({ request }) =>
     authorized(request) ? HttpResponse.json({ quotaBytes: mockUser.quotaBytes, usedBytes: mockUser.usedBytes, remainingBytes: mockUser.quotaBytes - mockUser.usedBytes }) : error(401, "MISSING_TOKEN", "Token requerido.")),
+  http.patch("http://localhost:8081/api/v1/users/:id", async ({ request, params }) => {
+    if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
+    const body = await request.json() as { email?: string };
+    if (body.email === "existente@example.test") return error(409, "EMAIL_EXISTS", "Ese correo ya existe.");
+    return HttpResponse.json({ ...mockUser, id: String(params.id), email: body.email ?? mockUser.email });
+  }),
+  http.delete("http://localhost:8081/api/v1/users/:id", ({ request }) =>
+    authorized(request) ? new HttpResponse(null, { status: 204 }) : error(401, "MISSING_TOKEN", "Token requerido.")),
   http.get("http://localhost:8082/api/v1/videos", ({ request }) => {
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
     const url = new URL(request.url);

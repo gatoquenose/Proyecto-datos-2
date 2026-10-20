@@ -12,9 +12,9 @@ const baseUrl = import.meta.env.VITE_USERS_API_URL ?? "http://localhost:8081/api
 
 export const usersClient = {
   createUser: (body: CreateUserRequest) =>
-    request<paths["/users"]["post"]["responses"]["201"]["content"]["application/json"]>(`${baseUrl}/users`, { method: "POST", body: JSON.stringify(body) }),
+    request<paths["/users"]["post"]["responses"]["201"]["content"]["application/json"]>(`${baseUrl}/users`, { method: "POST", body: JSON.stringify(body), handleUnauthorized: false }),
   login: (body: LoginRequest) =>
-    request<LoginResponse>(`${baseUrl}/auth/login`, { method: "POST", body: JSON.stringify(body) }),
+    request<LoginResponse>(`${baseUrl}/auth/login`, { method: "POST", body: JSON.stringify(body), handleUnauthorized: false }),
   getCurrentUser: () => request<Me>(`${baseUrl}/users/me`),
   getMyQuota: () => request<Quota>(`${baseUrl}/users/me/quota`),
   updateUser: (id: string, body: UpdateUserRequest) =>

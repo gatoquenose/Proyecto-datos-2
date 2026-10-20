@@ -4,7 +4,8 @@ import { AppLayout } from "../components/AppLayout";
 import { ProtectedRoute } from "../components/ProtectedRoute";
 import { LoginPage, RegisterPage } from "../pages/LoginPage";
 import { VideoListPage } from "../pages/VideoListPage";
-import { NotFoundPage, ProfilePage, UploadPage, VideoDetailPage } from "../pages/PlaceholderPages";
+import { NotFoundPage, UploadPage, VideoDetailPage } from "../pages/PlaceholderPages";
+import { ProfilePage } from "../pages/ProfilePage";
 
 function HomeRedirect(): JSX.Element {
   const { token } = useAuth();

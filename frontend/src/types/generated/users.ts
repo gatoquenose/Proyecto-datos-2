@@ -323,7 +323,7 @@ export interface components {
          */
         ApiError: {
             /** @enum {string} */
-            code: "VALIDATION_ERROR" | "INVALID_CURSOR" | "MISSING_TOKEN" | "INVALID_TOKEN" | "TOKEN_EXPIRED" | "FORBIDDEN" | "QUOTA_EXCEEDED" | "NOT_FOUND" | "CONFLICT" | "USERNAME_EXISTS" | "EMAIL_EXISTS" | "INVALID_STATE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "UNPROCESSABLE_ENTITY" | "INTERNAL_ERROR" | "DEPENDENCY_ERROR" | "SERVICE_UNAVAILABLE";
+            code: "VALIDATION_ERROR" | "INVALID_CURSOR" | "MISSING_TOKEN" | "INVALID_TOKEN" | "TOKEN_EXPIRED" | "INVALID_CREDENTIALS" | "FORBIDDEN" | "QUOTA_EXCEEDED" | "NOT_FOUND" | "CONFLICT" | "USERNAME_EXISTS" | "EMAIL_EXISTS" | "INVALID_STATE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "UNPROCESSABLE_ENTITY" | "INTERNAL_ERROR" | "DEPENDENCY_ERROR" | "SERVICE_UNAVAILABLE";
             message: string;
             details: {
                 [key: string]: unknown;
@@ -347,6 +347,23 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+        /** @description Credenciales incorrectas; el mensaje no revela si el usuario existe. */
+        InvalidCredentialsError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "code": "INVALID_CREDENTIALS",
+                 *       "message": "Usuario o contraseña incorrectos.",
+                 *       "details": null,
+                 *       "traceId": "01HZX3Y7J8K9M0N1P2Q3R4S5T6"
+                 *     }
+                 */
                 "application/json": components["schemas"]["ApiError"];
             };
         };
@@ -488,7 +505,7 @@ export interface operations {
                     "application/json": components["schemas"]["LoginResponse"];
                 };
             };
-            401: components["responses"]["UnauthorizedError"];
+            401: components["responses"]["InvalidCredentialsError"];
         };
     };
     getCurrentUser: {
