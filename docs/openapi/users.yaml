@@ -71,7 +71,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LoginResponse' }
-        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '401': { $ref: '#/components/responses/InvalidCredentialsError' }
   /users/me:
     get:
       tags: [Users]
@@ -225,12 +225,12 @@ components:
       properties:
         username: { type: string, minLength: 3, maxLength: 64, pattern: '^[A-Za-z0-9_.-]+$' }
         email: { type: string, format: email }
-        password: { type: string, minLength: 8, format: password }
+        password: { type: string, minLength: 8, maxLength: 128, format: password }
     LoginRequest:
       type: object
       required: [username, password]
       example: { username: ana.tec, password: CorrectHorseBatteryStaple! }
-      properties: { username: { type: string }, password: { type: string, format: password } }
+      properties: { username: { type: string }, password: { type: string, minLength: 8, maxLength: 128, format: password } }
     UpdateUserRequest:
       type: object
       minProperties: 1
@@ -302,13 +302,14 @@ components:
       required: [code, message, details, traceId]
       example: { code: VALIDATION_ERROR, message: Datos inválidos, details: { field: email }, traceId: 01HZX3Y7J8K9M0N1P2Q3R4S5T6 }
       properties:
-        code: { type: string, enum: [VALIDATION_ERROR, INVALID_CURSOR, MISSING_TOKEN, INVALID_TOKEN, TOKEN_EXPIRED, FORBIDDEN, QUOTA_EXCEEDED, NOT_FOUND, CONFLICT, USERNAME_EXISTS, EMAIL_EXISTS, INVALID_STATE, PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, UNPROCESSABLE_ENTITY, INTERNAL_ERROR, DEPENDENCY_ERROR, SERVICE_UNAVAILABLE] }
+        code: { type: string, enum: [VALIDATION_ERROR, INVALID_CURSOR, MISSING_TOKEN, INVALID_TOKEN, TOKEN_EXPIRED, INVALID_CREDENTIALS, FORBIDDEN, QUOTA_EXCEEDED, NOT_FOUND, CONFLICT, USERNAME_EXISTS, EMAIL_EXISTS, INVALID_STATE, PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, UNPROCESSABLE_ENTITY, INTERNAL_ERROR, DEPENDENCY_ERROR, SERVICE_UNAVAILABLE] }
         message: { type: string }
         details: { type: object, nullable: true, additionalProperties: true }
         traceId: { type: string }
   responses:
     ValidationError: { description: Error de validación, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     UnauthorizedError: { description: 'Token ausente, inválido o expirado.', content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    InvalidCredentialsError: { description: 'Credenciales incorrectas; el mensaje no revela si el usuario existe.', content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' }, example: { code: INVALID_CREDENTIALS, message: 'Usuario o contraseña incorrectos.', details: null, traceId: 01HZX3Y7J8K9M0N1P2Q3R4S5T6 } } } }
     ForbiddenError: { description: Operación no permitida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     ConflictError: { description: Conflicto, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     NotFoundError: { description: No encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
