@@ -13,6 +13,8 @@ compile_commands.json
 
 # IDE metadata
 /.idea/
+/.vite/
+/frontend/coverage/
 
 # Local configuration and runtime data
 .env

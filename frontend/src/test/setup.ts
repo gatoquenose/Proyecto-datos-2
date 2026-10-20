@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { authStore } from "../auth/authStore";
 import { server } from "../mocks/server";
 
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
+beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
   cleanup();
   server.resetHandlers();
