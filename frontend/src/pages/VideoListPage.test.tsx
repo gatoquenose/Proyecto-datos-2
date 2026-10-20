@@ -35,7 +35,7 @@ describe("VideoListPage", () => {
     metadata.listVideos.mockResolvedValueOnce({ items: [video("1", "Video propio")], nextCursor: null });
     renderPage("/videos/mine");
     expect(await screen.findByRole("heading", { name: "Mis videos" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Video propio" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Video propio" })).toBeInTheDocument();
     expect(screen.queryByText("Público")).not.toBeInTheDocument();
     expect(screen.getByText("Privado")).toBeInTheDocument();
     expect(screen.getByText("Listo")).toBeInTheDocument();
@@ -66,6 +66,25 @@ describe("VideoListPage", () => {
     expect(await screen.findByRole("heading", { name: "Resultado" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Ordenar por"), { target: { value: "title" } });
     await waitFor(() => expect(metadata.listVideos).toHaveBeenLastCalledWith({ sortBy: "title", order: "desc", q: "resultado", pageSize: 12, cursor: undefined }));
+  });
+
+  it("conserva el input enfocado y montado mientras cambia la búsqueda", async () => {
+    let resolveSearch: ((value: { items: ReturnType<typeof video>[]; nextCursor: null }) => void) | undefined;
+    metadata.listVideos
+      .mockResolvedValueOnce({ items: [video("1", "Inicial")], nextCursor: null })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveSearch = resolve;
+      }));
+    renderPage("/videos");
+    const input = await screen.findByRole("searchbox", { name: "Buscar videos" });
+    input.focus();
+    fireEvent.change(input, { target: { value: "resultado" } });
+    await waitFor(() => expect(metadata.listVideos).toHaveBeenLastCalledWith({ sortBy: "uploadedAt", order: "desc", q: "resultado", pageSize: 12, cursor: undefined }));
+    expect(screen.getByRole("searchbox", { name: "Buscar videos" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Buscar videos" })).toHaveFocus();
+    expect(screen.getByRole("searchbox", { name: "Buscar videos" })).toHaveValue("resultado");
+    expect(screen.getByRole("region")).toHaveAttribute("aria-busy", "true");
+    resolveSearch?.({ items: [video("2", "Resultado")], nextCursor: null });
   });
 
   it("restaura q, sortBy y order desde la URL y anuncia el conteo", async () => {
