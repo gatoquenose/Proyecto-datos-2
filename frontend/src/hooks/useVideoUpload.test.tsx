@@ -44,6 +44,38 @@ describe("useVideoUpload", () => {
     expect(clients.startUpload).toHaveBeenCalledTimes(2);
   });
 
+  it("reintenta un error de red TypeError y publica", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(undefined),
+      getUpload: vi.fn(), completeUpload: vi.fn().mockResolvedValue(status),
+      getProcessing: vi.fn().mockResolvedValue({ status: "ready" }), cancelUpload: vi.fn(), deleteVideo: vi.fn(),
+    };
+    const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
+    await act(async () => { await result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never); });
+    expect(clients.uploadChunk).toHaveBeenCalledTimes(2);
+    expect(result.current.state.phase).toBe("published");
+  });
+
+  it("agota los reintentos de red, pasa a failed y limpia el huérfano", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+      getUpload: vi.fn(), completeUpload: vi.fn(), getProcessing: vi.fn(),
+      cancelUpload: vi.fn().mockResolvedValue(undefined), deleteVideo: vi.fn().mockResolvedValue(undefined),
+    };
+    const { result } = renderHook(() => useVideoUpload(clients), { wrapper });
+    await act(async () => {
+      await expect(result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never)).rejects.toThrow("Failed to fetch");
+    });
+    expect(clients.uploadChunk).toHaveBeenCalledTimes(3);
+    expect(clients.cancelUpload).toHaveBeenCalledWith("upload-1");
+    expect(clients.deleteVideo).toHaveBeenCalledWith("video-1");
+    expect(result.current.state.phase).toBe("failed");
+  });
+
   it("no limpia ante 401 y conserva la reanudación", async () => {
     const unauthorized = new ApiError(401, { code: "TOKEN_EXPIRED", message: "expired", details: null, traceId: "x" });
     const clients = {

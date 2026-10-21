@@ -41,7 +41,7 @@ describe("subidas mock", () => {
     const status = await fetch(`http://localhost:8083/api/v1/uploads/${upload.uploadId}`, { headers: { Authorization: "Bearer mock-jwt" } });
     expect(accepted.status).toBe(204);
     const completed = await fetch(`http://localhost:8083/api/v1/uploads/${upload.uploadId}/complete`, {
-      method: "POST", headers: { Authorization: "******", "Content-Type": "application/json" },
+      method: "POST", headers: { Authorization: "Bearer mock-jwt", "Content-Type": "application/json" },
       body: JSON.stringify({ fileChecksum: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" }),
     });
     expect(completed.status).toBe(202);
@@ -51,12 +51,12 @@ describe("subidas mock", () => {
   it("valida el checksum final y permite cancelar una subida inválida", async () => {
     authStore.setSession("mock-jwt", mockUser);
     const start = await fetch("http://localhost:8083/api/v1/videos/mock-video/upload", {
-      method: "POST", headers: { Authorization: "******", "Content-Type": "application/json" },
+      method: "POST", headers: { Authorization: "Bearer mock-jwt", "Content-Type": "application/json" },
       body: JSON.stringify({ fileName: "a.mp4", contentType: "video/mp4", totalBytes: 3, chunkSize: 8 }),
     });
     const upload = await start.json() as { uploadId: string };
     const invalid = await fetch(`http://localhost:8083/api/v1/uploads/${upload.uploadId}/complete`, {
-      method: "POST", headers: { Authorization: "******", "Content-Type": "application/json" },
+      method: "POST", headers: { Authorization: "Bearer mock-jwt", "Content-Type": "application/json" },
       body: JSON.stringify({ fileChecksum: "0".repeat(64) }),
     });
     expect(invalid.status).toBe(400);
@@ -64,7 +64,7 @@ describe("subidas mock", () => {
       method: "DELETE",       headers: { Authorization: "Bearer mock-jwt" },
     });
     expect(canceled.status).toBe(204);
-    const missing = await fetch(`http://localhost:8083/api/v1/uploads/${upload.uploadId}`, { headers: { Authorization: "******" } });
+    const missing = await fetch(`http://localhost:8083/api/v1/uploads/${upload.uploadId}`, { headers: { Authorization: "Bearer mock-jwt" } });
     expect(missing.status).toBe(404);
   });
 
@@ -75,7 +75,7 @@ describe("subidas mock", () => {
       body: JSON.stringify({ fileName: "a.mp4", contentType: "video/mp4", totalBytes: 3, chunkSize: 8 }),
     });
     const upload = await start.json() as { uploadId: string };
-    const headers = { Authorization: "******", "Content-Type": "application/octet-stream", "X-Chunk-Checksum": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "Content-Range": "bytes 0-2/3" };
+    const headers = { Authorization: "Bearer mock-jwt", "Content-Type": "application/octet-stream", "X-Chunk-Checksum": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "Content-Range": "bytes 0-2/3" };
     mockUploadControls.failChunkWith5xxOnce = 0;
     expect((await fetch(`http://localhost:8083/api/v1/uploads/${upload.uploadId}/chunks/0`, { method: "PUT", headers, body: new Uint8Array([97, 98, 99]) })).status).toBe(503);
     expect((await fetch(`http://localhost:8083/api/v1/uploads/${upload.uploadId}/chunks/0`, { method: "PUT", headers, body: new Uint8Array([97, 98, 99]) })).status).toBe(204);
@@ -92,12 +92,12 @@ describe("subidas mock", () => {
     });
     const upload = await start.json() as { uploadId: string };
     mockUploadControls.failNetwork = true;
-    const response = await fetch(`http://localhost:8083/api/v1/uploads/${upload.uploadId}/chunks/0`, {
+    const request = fetch(`http://localhost:8083/api/v1/uploads/${upload.uploadId}/chunks/0`, {
       method: "PUT",
       headers: { Authorization: "Bearer mock-jwt", "Content-Type": "application/octet-stream" },
       body: new Uint8Array([97, 98, 99]),
     });
-    expect(response.status).toBe(500);
+    await expect(request).rejects.toThrow(TypeError);
     mockUploadControls.failNetwork = false;
   });
 

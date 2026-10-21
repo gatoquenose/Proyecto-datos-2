@@ -10,6 +10,7 @@ export const mockUser: UserComponents["schemas"]["Me"] = {
 };
 
 export const mockPassword = "CorrectHorseBatteryStaple!";
+export const MOCK_TOKEN = "Bearer mock-jwt";
 
 export const mockVideos: components["schemas"]["Video"][] = Array.from({ length: 30 }, (_, index) => ({
   id: `550e8400-e29b-41d4-a716-44665544${String(index).padStart(4, "0")}`,

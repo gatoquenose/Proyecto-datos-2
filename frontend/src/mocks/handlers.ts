@@ -15,10 +15,10 @@ const mockUploads = new Map<string, {
   fileName: string; contentType: string; status: "uploading" | "queued" | "processing" | "published" | "failed"; processingChecks: number;
 }>();
 
-const error = (status: number, code: string, message: string, details: Record<string, unknown> | null = null) =>
-  HttpResponse.json({ code, message, details, traceId: "mock-trace-001" }, { status });
+const authorized = (request: Request): boolean => request.headers.get("Authorization") === "Bearer mock-jwt";
 
-const authorized = (request: Request): boolean => ["Bearer mock-jwt", "******"].includes(request.headers.get("Authorization") ?? "");
+const error = (status: number, code: string, message: string, details: Record<string, unknown> | null = null) =>
+    HttpResponse.json({ code, message, details, traceId: "mock-trace-001" }, { status });
 
 export const handlers = [
   http.post("http://localhost:8081/api/v1/users", async ({ request }) => {
@@ -128,7 +128,7 @@ export const handlers = [
     if (!upload) return error(404, "NOT_FOUND", "Subida no encontrada.");
     const chunkNumber = Number(params.chunkNumber);
     if (chunkNumber !== upload.receivedChunks.length) return error(409, "CONFLICT", "Orden de fragmentos inválido.");
-    if (mockUploadControls.failNetwork) throw new Error("Fallo de red simulado.");
+    if (mockUploadControls.failNetwork) return HttpResponse.error();
     if (mockUploadControls.failChunkWith5xxOnce === chunkNumber) {
       mockUploadControls.failChunkWith5xxOnce = null;
       return error(503, "SERVICE_UNAVAILABLE", "Fallo 5xx simulado.");
