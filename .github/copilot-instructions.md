@@ -19,6 +19,18 @@ proyecto; si contradice un contrato de `docs/openapi/`, prevalece el YAML.
   completo `"Bearer xyz"`.
 - Si un mismo problema falla dos veces seguidas, detente y descríbeme el
   problema y las opciones en lugar de seguir intentando.
+- Antes de cada commit que toque mocks o la configuración de Vite, compila con
+  `$env:VITE_USE_MOCKS='false'` y quita la variable después. Comprueba que
+  `frontend\dist` no contiene chunks `browser-*.js` ni las cadenas `mock-jwt`,
+  `CorrectHorse` o `ana.tec`, además de `.m4s` y `manifest.mpd`.
+- Después del commit que restringe los mocks a desarrollo, repite la
+  verificación con tres builds: `$env:VITE_USE_MOCKS='true'`,
+  `$env:VITE_USE_MOCKS='false'` y la variable eliminada con
+  `Remove-Item Env:VITE_USE_MOCKS`. En los tres casos `frontend\dist` no debe
+  contener `browser-*.js`, `.m4s`, `manifest.mpd`, `mock-jwt`, `CorrectHorse`
+  ni `ana.tec`; quita siempre la variable al terminar. Desde ese commit usa
+  `npm.cmd --prefix frontend run dev` para los mocks; `vite preview` no los
+  carga.
 - Muestra cada comando completo antes de ejecutarlo y no uses comandos
   interactivos. No borres ni sobrescribas archivos sin indicar cuáles. Nunca
   uses `--force`, `--legacy-peer-deps`, `npm audit fix --force` ni `git clean`
