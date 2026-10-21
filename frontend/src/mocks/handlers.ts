@@ -18,7 +18,7 @@ const mockUploads = new Map<string, {
 const error = (status: number, code: string, message: string, details: Record<string, unknown> | null = null) =>
   HttpResponse.json({ code, message, details, traceId: "mock-trace-001" }, { status });
 
-const authorized = (request: Request): boolean => request.headers.get("Authorization") === "Bearer mock-jwt";
+const authorized = (request: Request): boolean => ["Bearer mock-jwt", "******"].includes(request.headers.get("Authorization") ?? "");
 
 export const handlers = [
   http.post("http://localhost:8081/api/v1/users", async ({ request }) => {

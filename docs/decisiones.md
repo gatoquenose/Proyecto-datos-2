@@ -67,6 +67,11 @@
   `Content-Type`, `Content-Range` y `X-Chunk-Checksum`, además de los métodos
   `PUT` y `DELETE`. Debe exponer `Accept-Ranges` y `Content-Range` para que el
   cliente pueda subir fragmentos y reproducir segmentos con soporte de rangos.
+- Un `400 VALIDATION_ERROR` de `completeUpload` por `fileChecksum` inválido no
+  cambia el estado: la subida sigue en `uploading`, conserva la reserva y
+  `cancelUpload` sigue siendo válido. Solo un `completeUpload` exitoso inicia
+  el procesamiento y vuelve no cancelable la subida; el frontend ofrece
+  reintentar o descartar para no dejar una reserva o registro huérfano.
 
 ## Frontend F1
 

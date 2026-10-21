@@ -86,6 +86,7 @@ describe("useVideoUpload", () => {
     expect(clients.getUpload).toHaveBeenCalledWith("upload-1");
     expect(clients.uploadChunk).toHaveBeenCalledTimes(1);
     expect(clients.uploadChunk.mock.calls[0][1]).toBe(1);
+    expect(clients.completeUpload.mock.calls[0][1].fileChecksum).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     expect(result.current.state.phase).toBe("published");
   });
 
@@ -140,6 +141,77 @@ describe("useVideoUpload", () => {
     expect(sessionStorage.getItem(UPLOAD_SESSION_KEY)).toContain("upload-1");
     expect(clients.cancelUpload).not.toHaveBeenCalled();
     expect(clients.deleteVideo).not.toHaveBeenCalled();
+  });
+
+  it("ofrece reintentar tras checksum inválido y conserva el video", async () => {
+    const invalid = new ApiError(400, { code: "VALIDATION_ERROR", message: "Checksum inválido", details: null, traceId: "x" });
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockResolvedValue(undefined), getUpload: vi.fn(), completeUpload: vi.fn().mockRejectedValueOnce(invalid).mockResolvedValue(status),
+      getProcessing: vi.fn().mockResolvedValue({ status: "ready" }), cancelUpload: vi.fn().mockResolvedValue(undefined), deleteVideo: vi.fn(),
+    };
+    const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
+    const file = new File(["abc"], "video.mp4", { type: "video/mp4" });
+    await act(async () => { await expect(result.current.start(file, metadata as never)).rejects.toThrow("Checksum inválido"); });
+    await act(async () => { await result.current.retryFailed(file, metadata as never); });
+    expect(clients.cancelUpload).toHaveBeenCalledWith("upload-1");
+    expect(clients.startUpload).toHaveBeenCalledTimes(2);
+    expect(result.current.state.phase).toBe("published");
+  });
+
+  it("ofrece descartar tras checksum inválido e invalida cuota", async () => {
+    const invalid = new ApiError(400, { code: "VALIDATION_ERROR", message: "Checksum inválido", details: null, traceId: "x" });
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockResolvedValue(undefined), getUpload: vi.fn(), completeUpload: vi.fn().mockRejectedValue(invalid),
+      getProcessing: vi.fn(), cancelUpload: vi.fn().mockResolvedValue(undefined), deleteVideo: vi.fn().mockResolvedValue(undefined),
+    };
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const localWrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useVideoUpload(clients), { wrapper: localWrapper });
+    await act(async () => { await expect(result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never)).rejects.toThrow(); });
+    await act(async () => { await result.current.discardFailed(); });
+    expect(clients.cancelUpload).toHaveBeenCalledWith("upload-1");
+    expect(clients.deleteVideo).toHaveBeenCalledWith("video-1");
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["quota"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["videos"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["video", "video-1"] });
+  });
+
+  it("invalida cuota, lista y video al publicar", async () => {
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockResolvedValue(undefined), getUpload: vi.fn(), completeUpload: vi.fn().mockResolvedValue(status),
+      getProcessing: vi.fn().mockResolvedValue({ status: "ready" }), cancelUpload: vi.fn(), deleteVideo: vi.fn(),
+    };
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const localWrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper: localWrapper });
+    await act(async () => { await result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never); });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["quota"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["videos"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["video", "video-1"] });
+  });
+
+  it("interrumpe la espera de retry al cancelar", async () => {
+    const transient = new ApiError(503, { code: "SERVICE_UNAVAILABLE", message: "down", details: null, traceId: "x" });
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockRejectedValue(transient), getUpload: vi.fn(), completeUpload: vi.fn(),
+      getProcessing: vi.fn(), cancelUpload: vi.fn().mockResolvedValue(undefined), deleteVideo: vi.fn().mockResolvedValue(undefined),
+    };
+    const { result } = renderHook(() => useVideoUpload(clients), { wrapper });
+    let running: Promise<void> | undefined;
+    await act(async () => {
+      running = result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => { await result.current.cancel(); await running; });
+    expect(clients.uploadChunk).toHaveBeenCalledTimes(1);
+    expect(result.current.state.phase).toBe("canceled");
   });
 
   it("informa si no puede limpiar el registro huérfano", async () => {
