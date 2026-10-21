@@ -10,7 +10,7 @@ const queryClient = new QueryClient();
 const root = createRoot(document.getElementById("root")!);
 const render = (): void => root.render(<StrictMode><BrowserRouter><AuthProvider><QueryClientProvider client={queryClient}><App /></QueryClientProvider></AuthProvider></BrowserRouter></StrictMode>);
 
-if (import.meta.env.VITE_USE_MOCKS === "true") {
+if (import.meta.env.DEV && import.meta.env.VITE_USE_MOCKS === "true") {
   void import("./mocks/browser").then(({ worker }) => worker.start({ onUnhandledRequest: "bypass" })).then(render);
 } else {
   render();
