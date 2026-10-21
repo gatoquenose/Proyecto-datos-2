@@ -10,7 +10,7 @@ Calificación del código: web 10, API de usuarios 15, API de metadata 5, API de
 
 ## 2. Reglas de trabajo con el agente (obligatorias)
 - Entorno: Windows, PowerShell, CLion, Node 22. Usa npm.cmd. Para npx entra primero a la carpeta (Push-Location frontend; ...; Pop-Location); "npx --prefix" falla porque conserva la raíz del repo. En PowerShell entrecomilla con comillas simples todo texto que contenga $.
-- No edites archivos con la pareja Get-Content/Set-Content de Windows PowerShell 5.1: puede corromper UTF-8. Usa la herramienta de edición del agente y conserva la codificación existente.
+- No edites archivos con Get-Content/Set-Content (en Windows PowerShell 5.1 pueden corromper caracteres UTF-8); usa la herramienta de edición.
 - Muestra cada comando completo ANTES de ejecutarlo. Sin comandos interactivos (Read-Host). No borres ni sobrescribas archivos sin decir cuáles. Nunca uses --force, --legacy-peer-deps, npm audit fix --force ni git clean sin un patrón explícito.
 - Antes de editar, muestra el plan y la lista exacta de archivos a crear o modificar, y espera mi validación. Si debes tocar un archivo fuera de esa lista, avísame antes.
 - Una sub-fase a la vez, con commits pequeños y separados, mensajes en español. Antes de cada commit: build, lint y pruebas SIN flags en verde. Después git push. Cierra cada sub-fase con un resumen: qué hiciste, qué verificaste, qué falta y qué debe entender el equipo para defenderlo.

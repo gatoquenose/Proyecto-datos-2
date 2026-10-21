@@ -9,8 +9,8 @@ proyecto; si contradice un contrato de `docs/openapi/`, prevalece el YAML.
   Para `npx`, entra primero en `frontend` con `Push-Location` y sal con
   `Pop-Location`. Entrecomilla con comillas simples todo texto que contenga
   `$`.
-- No edites archivos con `Get-Content`/`Set-Content` de Windows PowerShell 5.1:
-  puede corromper UTF-8. Usa la herramienta de edición del agente.
+- No edites archivos con `Get-Content`/`Set-Content` (en Windows PowerShell 5.1
+  pueden corromper caracteres UTF-8); usa la herramienta de edición.
 - Muestra cada comando completo antes de ejecutarlo y no uses comandos
   interactivos. No borres ni sobrescribas archivos sin indicar cuáles. Nunca
   uses `--force`, `--legacy-peer-deps`, `npm audit fix --force` ni `git clean`
