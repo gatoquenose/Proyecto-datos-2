@@ -30,6 +30,19 @@
   `BaseURL: dash/`, o alternativamente declarar explícitamente que el servidor
   reescribe las referencias relativas del MPD para resolver contra
   `/videos/{videoId}/dash/`.
+- F4 carga Shaka de forma dinámica únicamente desde el reproductor de la
+  página de detalle, instala sus polyfills y rechaza navegadores sin soporte.
+  Las peticiones de manifiesto y segmentos llevan `Authorization`; el retry
+  queda limitado a un intento para no reintentar 401, 403 ni 404. Los errores
+  `BAD_HTTP_STATUS` se mapean a los mensajes de sesión expirada, permisos o
+  recurso no encontrado; el 401 reutiliza el flujo global de sesión expirada.
+- Con el backend real, el filtro de `Authorization` genera preflight CORS por
+  segmento: Streaming API debe permitir el header `Authorization`, responder
+  `OPTIONS` y exponer `Content-Range` y `Accept-Ranges`.
+- F4 incluye acciones del dueño: Editar enlaza a la ruta de edición, Cambiar
+  visibilidad usa `PATCH /videos/{id}/visibility` y Eliminar requiere
+  confirmación y usa `DELETE /videos/{id}`. El diálogo no promete nada sobre
+  los archivos.
 
 ## Frontend F1
 

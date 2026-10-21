@@ -15,9 +15,9 @@ export const usersClient = {
     request<paths["/users"]["post"]["responses"]["201"]["content"]["application/json"]>(`${baseUrl}/users`, { method: "POST", body: JSON.stringify(body), handleUnauthorized: false }),
   login: (body: LoginRequest) =>
     request<LoginResponse>(`${baseUrl}/auth/login`, { method: "POST", body: JSON.stringify(body), handleUnauthorized: false }),
-  getCurrentUser: () => request<Me>(`${baseUrl}/users/me`),
-  getMyQuota: () => request<Quota>(`${baseUrl}/users/me/quota`),
+  getCurrentUser: () => request<Me>(`${baseUrl}/users/me`, { requiresAuth: true }),
+  getMyQuota: () => request<Quota>(`${baseUrl}/users/me/quota`, { requiresAuth: true }),
   updateUser: (id: string, body: UpdateUserRequest) =>
-    request<Me>(`${baseUrl}/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  deleteUser: (id: string) => request<void>(`${baseUrl}/users/${id}`, { method: "DELETE" }),
+    request<Me>(`${baseUrl}/users/${id}`, { method: "PATCH", body: JSON.stringify(body), requiresAuth: true }),
+  deleteUser: (id: string) => request<void>(`${baseUrl}/users/${id}`, { method: "DELETE", requiresAuth: true }),
 };

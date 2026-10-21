@@ -3,6 +3,7 @@ import { ApiError, type ApiErrorBody } from "../types/api";
 export type UnauthorizedHandler = (returnPath: string) => void;
 export interface RequestOptions extends RequestInit {
   handleUnauthorized?: boolean;
+  requiresAuth?: boolean;
 }
 
 let token: string | null = null;
@@ -14,6 +15,10 @@ export const setHttpToken = (value: string | null): void => {
 
 export const setUnauthorizedHandler = (handler: UnauthorizedHandler | null): void => {
   unauthorizedHandler = handler;
+};
+
+export const notifyUnauthorized = (returnPath = window.location.pathname + window.location.search): void => {
+  unauthorizedHandler?.(returnPath);
 };
 
 const parseError = async (response: Response): Promise<ApiError> => {
@@ -36,9 +41,13 @@ export const request = async <T>(
   init: RequestOptions = {},
   returnPath = window.location.pathname + window.location.search,
 ): Promise<T> => {
-  const { handleUnauthorized = true, ...requestInit } = init;
+  const { handleUnauthorized = true, requiresAuth = false, ...requestInit } = init;
   const headers = new Headers(requestInit.headers);
   if (requestInit.body && !(requestInit.body instanceof Blob) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (!token && requiresAuth && handleUnauthorized) {
+    notifyUnauthorized(returnPath);
+    throw new ApiError(401, { code: "MISSING_TOKEN", message: "Tu sesión es necesaria.", details: null, traceId: "client-no-token" });
+  }
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(url, { ...requestInit, headers });
   if (!response.ok) {

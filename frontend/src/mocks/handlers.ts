@@ -48,6 +48,31 @@ export const handlers = [
     const items = filtered.slice(cursor, cursor + pageSize);
     return HttpResponse.json({ items, nextCursor: cursor + pageSize < filtered.length ? String(cursor + pageSize) : null });
   }),
+  http.get("http://localhost:8082/api/v1/videos/:id", ({ request, params }) => {
+    if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
+    const video = mockVideos.find((item) => item.id === String(params.id));
+    return video ? HttpResponse.json(video) : error(404, "NOT_FOUND", "Video no encontrado.");
+  }),
+  http.patch("http://localhost:8082/api/v1/videos/:id/visibility", async ({ request, params }) => {
+    if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
+    const video = mockVideos.find((item) => item.id === String(params.id));
+    if (!video || video.ownerId !== mockUser.id) return error(403, "FORBIDDEN", "Sin permisos.");
+    const body = await request.json() as { visibility?: "public" | "private" };
+    video.visibility = body.visibility ?? video.visibility;
+    return HttpResponse.json(video);
+  }),
+  http.delete("http://localhost:8082/api/v1/videos/:id", ({ request, params }) => {
+    if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
+    const index = mockVideos.findIndex((item) => item.id === String(params.id));
+    if (index < 0 || mockVideos[index].ownerId !== mockUser.id) return error(403, "FORBIDDEN", "Sin permisos.");
+    mockVideos.splice(index, 1);
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.get("http://localhost:8083/api/v1/videos/:videoId/processing", ({ request, params }) => {
+    if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
+    const video = mockVideos.find((item) => item.id === String(params.videoId));
+    return video ? HttpResponse.json({ videoId: video.id, status: video.status, durationSeconds: video.durationSeconds, error: video.status === "failed" ? "Error mock" : null }) : error(404, "NOT_FOUND", "Video no encontrado.");
+  }),
   http.get("http://localhost:8083/api/v1/videos/:videoId/manifest.mpd", ({ request }) => {
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
     return new HttpResponse(manifest.replace("<Period", "<BaseURL>dash/</BaseURL><Period"), {

@@ -19,18 +19,18 @@ export interface VideoListQuery {
 
 export const metadataClient = {
   createVideo: (body: CreateVideoRequest) =>
-    request<Video>(`${baseUrl}/videos`, { method: "POST", body: JSON.stringify(body) }),
+    request<Video>(`${baseUrl}/videos`, { method: "POST", body: JSON.stringify(body), requiresAuth: true }),
   listVideos: (query: VideoListQuery = {}) => {
     const params = new URLSearchParams();
     Object.entries(query).forEach(([key, value]) => {
       if (value !== undefined) params.set(key, String(value));
     });
-    return request<VideoPage>(`${baseUrl}/videos?${params.toString()}`);
+    return request<VideoPage>(`${baseUrl}/videos?${params.toString()}`, { requiresAuth: true });
   },
-  getVideo: (id: string) => request<Video>(`${baseUrl}/videos/${id}`),
+  getVideo: (id: string) => request<Video>(`${baseUrl}/videos/${id}`, { requiresAuth: true }),
   updateVideo: (id: string, body: UpdateVideoRequest) =>
-    request<Video>(`${baseUrl}/videos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    request<Video>(`${baseUrl}/videos/${id}`, { method: "PATCH", body: JSON.stringify(body), requiresAuth: true }),
   updateVideoVisibility: (id: string, visibility: "public" | "private") =>
-    request<Video>(`${baseUrl}/videos/${id}/visibility`, { method: "PATCH", body: JSON.stringify({ visibility }) }),
-  deleteVideo: (id: string) => request<void>(`${baseUrl}/videos/${id}`, { method: "DELETE" }),
+    request<Video>(`${baseUrl}/videos/${id}/visibility`, { method: "PATCH", body: JSON.stringify({ visibility }), requiresAuth: true }),
+  deleteVideo: (id: string) => request<void>(`${baseUrl}/videos/${id}`, { method: "DELETE", requiresAuth: true }),
 };
