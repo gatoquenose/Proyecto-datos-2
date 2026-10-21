@@ -11,6 +11,14 @@ proyecto; si contradice un contrato de `docs/openapi/`, prevalece el YAML.
   `$`.
 - No edites archivos con `Get-Content`/`Set-Content` (en Windows PowerShell 5.1
   pueden corromper caracteres UTF-8); usa la herramienta de edición.
+- Si una lectura muestra `******`, el archivo contiene otro valor: nunca lo
+  copies de vuelta ni escribas `******` literal.
+- No edites líneas que contengan `Authorization` o `Bearer`; si deben cambiar,
+  avisa para que se modifiquen en el IDE. En código nuevo, construye el header
+  con constantes como `BEARER_SCHEME` y `MOCK_TOKEN`, nunca con un literal
+  completo `"Bearer xyz"`.
+- Si un mismo problema falla dos veces seguidas, detente y descríbeme el
+  problema y las opciones en lugar de seguir intentando.
 - Muestra cada comando completo antes de ejecutarlo y no uses comandos
   interactivos. No borres ni sobrescribas archivos sin indicar cuáles. Nunca
   uses `--force`, `--legacy-peer-deps`, `npm audit fix --force` ni `git clean`
