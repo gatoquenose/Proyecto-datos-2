@@ -4,9 +4,10 @@ import { AppLayout } from "../components/AppLayout";
 import { ProtectedRoute } from "../components/ProtectedRoute";
 import { LoginPage, RegisterPage } from "../pages/LoginPage";
 import { VideoListPage } from "../pages/VideoListPage";
-import { NotFoundPage, UploadPage } from "../pages/PlaceholderPages";
+import { NotFoundPage } from "../pages/PlaceholderPages";
 import { VideoDetailPage } from "../pages/VideoDetailPage";
 import { ProfilePage } from "../pages/ProfilePage";
+import { UploadPage } from "../pages/UploadPage";
 
 function HomeRedirect(): JSX.Element {
   const { token } = useAuth();

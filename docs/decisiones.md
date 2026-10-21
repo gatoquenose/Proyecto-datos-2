@@ -55,6 +55,14 @@
 
 ## Frontend F5
 
+- El asistente de subida limita por defecto los archivos a 2 GiB mediante
+  `VITE_MAX_UPLOAD_BYTES`; el valor puede reducirse sin cambiar el contrato.
+  `VITE_UPLOAD_CHUNK_SIZE` controla el tamaño de fragmento y las variables
+  `VITE_MOCK_*` documentan demoras y fallos simulados sin afectar los clientes
+  reales. La interfaz muestra el espacio restante únicamente en `/videos/new`
+  cuando un archivo no cabe; el servidor mantiene la autoridad mediante
+  `QUOTA_EXCEEDED`.
+
 - El contrato de `uploadChunk` fija `chunkNumber` desde cero (`minimum: 0`).
   Su ejemplo de `Content-Range` se interpreta con extremo final inclusivo:
   `bytes start-end/total`, donde `end = start + chunkBytes - 1`. El YAML no

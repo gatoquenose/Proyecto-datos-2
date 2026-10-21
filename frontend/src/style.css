@@ -29,6 +29,16 @@ input, select { border: 1px solid #cbd5e1; border-radius: .4rem; padding: .65rem
 .profile-page { display: grid; gap: 1rem; max-width: 680px; }
 .profile-card { display: grid; gap: 1rem; }
 .profile-card small { display: block; color: #64748b; margin-top: .25rem; }
+.upload-page { display: grid; gap: 1rem; max-width: 760px; }
+.upload-form { display: grid; gap: 1rem; }
+.upload-form textarea { min-height: 8rem; resize: vertical; border: 1px solid #cbd5e1; border-radius: .4rem; padding: .65rem; font: inherit; }
+.upload-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.upload-status { display: grid; gap: .75rem; }
+.upload-status [role="progressbar"] { min-height: 1.5rem; display: grid; place-items: center; border-radius: .4rem; background: #dbeafe; color: #1d4ed8; }
+.tag-input { display: grid; gap: .4rem; }
+.tag-list { display: flex; flex-wrap: wrap; gap: .5rem; padding: 0; margin: 0; list-style: none; }
+.tag-chip { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .5rem; border-radius: 999px; background: #dbeafe; color: #1e3a8a; }
+.tag-chip button { border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; padding: 0 .2rem; }
 .danger-zone { border-color: #fecaca; }
 .danger { color: #991b1b; border-color: #fca5a5; }
 .dialog-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 1rem; background: #0f172a99; z-index: 10; }
