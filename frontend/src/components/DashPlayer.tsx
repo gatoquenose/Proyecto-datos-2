@@ -122,7 +122,7 @@ export function DashPlayer({ manifestUrl, onError, loadShaka }: { manifestUrl: s
   }, [loadShaka, manifestUrl, onError]);
 
   return <div className="dash-player">
-    {/* eslint-disable-next-line jsx-a11y/media-has-caption -- no hay pista de subtítulos disponible todavía; se documenta como limitación F4. */}
+    {/* eslint-disable-next-line jsx-a11y/media-has-caption -- v1 no ofrece subtítulos; se documenta como limitación F4. */}
     <video ref={videoRef} controls playsInline aria-label="Reproductor de video" />
     {message && <p className="error-box" role="alert">{message}</p>}
     {tracks.length > 0 && <label htmlFor="video-quality">Calidad
