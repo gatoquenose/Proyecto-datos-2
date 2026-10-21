@@ -67,3 +67,6 @@ registros huérfanos con `deleteVideo`, variable `VITE_MAX_UPLOAD_BYTES`,
 asistente de dos pasos, polling de procesamiento, `beforeunload`, edición y
 mocks/pruebas correspondientes. F6 queda después de F5; el backend comienza
 después en el orden A, B, C, D, E, G y H. No iniciar F6 ni backend durante F5.
+La cuota solo se muestra en `/profile`; no agregar indicadores de cuota a la
+cabecera ni a otras pantallas. La caché `["quota"]` debe conservarse para el
+perfil y su invalidación.
