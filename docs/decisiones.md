@@ -17,6 +17,19 @@
   collation, and every index query is validated with `explain`.
 - User endpoints return only privacy-scoped data and never expose credentials,
   private metadata, or internal identifiers unnecessarily.
+- El fixture DASH sintético de mocks vive en
+  `frontend/src/mocks/fixtures/dash/`. Se generó con FFmpeg mediante:
+  `ffmpeg -y -f lavfi -i "testsrc=size=1280x720:rate=24:duration=12" -f lavfi -i "sine=frequency=1000:sample_rate=48000:duration=12" -filter_complex "[0:v]split=2[v360][v720];[v360]scale=640:360[v360out];[v720]null[v720out]" -map "[v360out]" -map "[v720out]" -map 1:a:0 -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -r 24 -g 96 -keyint_min 96 -sc_threshold 0 -b:v:0 70k -maxrate:v:0 80k -bufsize:v:0 140k -b:v:1 150k -maxrate:v:1 170k -bufsize:v:1 300k -c:a aac -b:a 32k -ar 48000 -ac 1 -use_template 1 -use_timeline 1 -seg_duration 4 -adaptation_sets "id=0,streams=v id=1,streams=a" -init_seg_name 'init-$RepresentationID$.m4s' -media_seg_name 'seg-$RepresentationID$-$Number%05d$.m4s' -f dash "frontend\src\mocks\fixtures\dash\manifest.mpd"`.
+  El manifiesto generado conserva nombres de segmento relativos; el handler
+  MSW inyecta `<BaseURL>dash/</BaseURL>` al responder porque el manifiesto se
+  sirve en `/videos/{id}/manifest.mpd` y los segmentos en
+  `/videos/{id}/dash/{path}`. La especificación real debe resolver esta
+  discrepancia antes de implementarse.
+- Propuesta pendiente para `docs/openapi/streaming.yaml` (no aplicada):
+  documentar que la respuesta de `GET /videos/{videoId}/manifest.mpd` incluye
+  `BaseURL: dash/`, o alternativamente declarar explícitamente que el servidor
+  reescribe las referencias relativas del MPD para resolver contra
+  `/videos/{videoId}/dash/`.
 
 ## Frontend F1
 

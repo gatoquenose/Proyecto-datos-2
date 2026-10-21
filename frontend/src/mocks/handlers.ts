@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { mockPassword, mockUser, mockVideos } from "./data";
+import manifest from "./fixtures/dash/manifest.mpd?raw";
 
 const error = (status: number, code: string, message: string, details: Record<string, unknown> | null = null) =>
   HttpResponse.json({ code, message, details, traceId: "mock-trace-001" }, { status });
@@ -46,6 +47,13 @@ export const handlers = [
     });
     const items = filtered.slice(cursor, cursor + pageSize);
     return HttpResponse.json({ items, nextCursor: cursor + pageSize < filtered.length ? String(cursor + pageSize) : null });
+  }),
+  http.get("http://localhost:8083/api/v1/videos/:videoId/manifest.mpd", ({ request }) => {
+    if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
+    return new HttpResponse(manifest.replace("<Period", "<BaseURL>dash/</BaseURL><Period"), {
+      status: 200,
+      headers: { "Content-Type": "application/dash+xml" },
+    });
   }),
   http.get("http://localhost:8083/api/v1/videos/:videoId/thumbnail", ({ request }) => {
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
