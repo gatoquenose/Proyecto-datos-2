@@ -43,6 +43,12 @@
   visibilidad usa `PATCH /videos/{id}/visibility` y Eliminar requiere
   confirmación y usa `DELETE /videos/{id}`. El diálogo no promete nada sobre
   los archivos.
+- Limitación conocida de F4: el reproductor todavía no ofrece subtítulos
+  porque el backend no entrega pistas ni existe un archivo de captions en el
+  fixture. El elemento `<video>` no incluye una pista vacía; se omite
+  `jsx-a11y/media-has-caption` únicamente en `DashPlayer.tsx` mientras esta
+  limitación siga vigente, para no presentar un recurso de subtítulos que no
+  contiene contenido real.
 
 ## Frontend F1
 

@@ -57,7 +57,7 @@ export const shakaErrorMessage = (error: { category?: number; code?: number; dat
   return "No se pudo reproducir el video.";
 };
 
-interface ShakaModule {
+export interface ShakaModule {
   default: {
     polyfill: { installAll: () => void };
     Player: {
@@ -67,7 +67,7 @@ interface ShakaModule {
   };
 }
 
-export function DashPlayer({ manifestUrl, onError }: { manifestUrl: string; onError?: (message: string) => void }): JSX.Element {
+export function DashPlayer({ manifestUrl, onError, loadShaka }: { manifestUrl: string; onError?: (message: string) => void; loadShaka?: () => Promise<ShakaModule> }): JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<PlayerLike | null>(null);
   const [tracks, setTracks] = useState<VariantTrack[]>([]);
@@ -77,7 +77,7 @@ export function DashPlayer({ manifestUrl, onError }: { manifestUrl: string; onEr
   useEffect(() => {
     let cancelled = false;
     const initialize = async (): Promise<void> => {
-      const shaka = await import("shaka-player") as unknown as ShakaModule;
+      const shaka = await (loadShaka ? loadShaka() : import("shaka-player") as unknown as Promise<ShakaModule>);
       shaka.default.polyfill.installAll();
       if (!shaka.default.Player.isBrowserSupported()) {
         setMessage("Tu navegador no soporta la reproducción DASH.");
@@ -119,10 +119,11 @@ export function DashPlayer({ manifestUrl, onError }: { manifestUrl: string; onEr
       void playerRef.current?.destroy();
       playerRef.current = null;
     };
-  }, [manifestUrl, onError]);
+  }, [loadShaka, manifestUrl, onError]);
 
   return <div className="dash-player">
-    <video ref={videoRef} controls playsInline aria-label="Reproductor de video"><track kind="captions" srcLang="es" label="Español" src="data:text/vtt,WEBVTT" /></video>
+    {/* eslint-disable-next-line jsx-a11y/media-has-caption -- no hay pista de subtítulos disponible todavía; se documenta como limitación F4. */}
+    <video ref={videoRef} controls playsInline aria-label="Reproductor de video" />
     {message && <p className="error-box" role="alert">{message}</p>}
     {tracks.length > 0 && <label htmlFor="video-quality">Calidad
       <select id="video-quality" value={quality} onChange={(event) => {
