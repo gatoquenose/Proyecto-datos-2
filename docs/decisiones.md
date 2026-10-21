@@ -63,6 +63,10 @@
   fragmento obtiene un hash independiente. Un archivo vacío se rechaza para
   subirlo, aunque el helper genérico conserva el vector SHA-256 de la cadena
   vacía.
+- El CORS del Streaming API debe permitir los headers `Authorization`,
+  `Content-Type`, `Content-Range` y `X-Chunk-Checksum`, además de los métodos
+  `PUT` y `DELETE`. Debe exponer `Accept-Ranges` y `Content-Range` para que el
+  cliente pueda subir fragmentos y reproducir segmentos con soporte de rangos.
 
 ## Frontend F1
 

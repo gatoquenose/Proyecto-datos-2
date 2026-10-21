@@ -37,6 +37,7 @@ paths:
       - name: chunkNumber
         in: path
         required: true
+        description: Índice del fragmento, comenzando en 0.
         schema: { type: integer, minimum: 0 }
       - name: X-Chunk-Checksum
         in: header
@@ -46,8 +47,8 @@ paths:
       - name: Content-Range
         in: header
         required: true
-        description: Rango byte del fragmento, por ejemplo bytes 0-1048575/5242880
-        schema: { type: string }
+        description: 'Rango byte del fragmento con extremo final inclusivo: bytes {inicio}-{fin}/{total}, por ejemplo bytes 0-1048575/5242880.'
+        schema: { type: string, pattern: '^bytes [0-9]+-[0-9]+/[0-9]+$' }
     put:
       tags: [Uploads]
       summary: Enviar un fragmento con checksum obligatorio
