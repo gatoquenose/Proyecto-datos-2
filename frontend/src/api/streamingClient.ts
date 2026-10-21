@@ -9,14 +9,28 @@ type ProcessingStatus = components["schemas"]["ProcessingStatus"];
 
 const baseUrl = import.meta.env.VITE_STREAMING_API_URL ?? "http://localhost:8083/api/v1";
 
+export interface UploadChunkOptions {
+  signal?: AbortSignal;
+  onProgress?: (bytesUploaded: number) => void;
+}
+
 export const streamingClient = {
   startUpload: (videoId: string, body: StartUploadRequest) =>
     request<StartUploadResponse>(`${baseUrl}/videos/${videoId}/upload`, { method: "POST", body: JSON.stringify(body), requiresAuth: true }),
-  uploadChunk: (uploadId: string, chunkNumber: number, bytes: Blob, checksum: string, contentRange: string) =>
+  uploadChunk: (
+    uploadId: string,
+    chunkNumber: number,
+    bytes: Blob,
+    checksum: string,
+    contentRange: string,
+    options: UploadChunkOptions = {},
+  ) =>
     request<void>(`${baseUrl}/uploads/${uploadId}/chunks/${chunkNumber}`, {
       method: "PUT",
       headers: { "Content-Type": "application/octet-stream", "X-Chunk-Checksum": checksum, "Content-Range": contentRange },
-      body: bytes, requiresAuth: true,
+      body: bytes, requiresAuth: true, signal: options.signal,
+    }).then(() => {
+      options.onProgress?.(bytes.size);
     }),
   getUpload: (uploadId: string) => request<UploadStatus>(`${baseUrl}/uploads/${uploadId}`, { requiresAuth: true }),
   completeUpload: (uploadId: string, body: CompleteUploadRequest) =>

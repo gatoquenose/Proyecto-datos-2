@@ -50,6 +50,20 @@
   limitación siga vigente, para no presentar un recurso de subtítulos que no
   contiene contenido real.
 
+## Frontend F5
+
+- El contrato de `uploadChunk` fija `chunkNumber` desde cero (`minimum: 0`).
+  Su ejemplo de `Content-Range` se interpreta con extremo final inclusivo:
+  `bytes start-end/total`, donde `end = start + chunkBytes - 1`. El YAML no
+  usa explícitamente la palabra “inclusive”, por lo que esta decisión debe
+  mantenerse alineada con el Streaming API antes de integrarlo.
+- El cliente usa fragmentos de 8 MiB por defecto (`DEFAULT_CHUNK_SIZE_BYTES`).
+  Lee cada `Blob.slice` en orden y mantiene un solo fragmento en memoria; el
+  SHA-256 completo usa `sha256.create().update(...)` en una sola pasada y cada
+  fragmento obtiene un hash independiente. Un archivo vacío se rechaza para
+  subirlo, aunque el helper genérico conserva el vector SHA-256 de la cadena
+  vacía.
+
 ## Frontend F1
 
 - `openapi-typescript` is a dev dependency and `gen:api` generates TypeScript
