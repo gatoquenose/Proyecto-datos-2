@@ -2,7 +2,10 @@ openapi: 3.0.3
 info:
   title: Tecflix Users API
   version: 1.0.0
-  description: Usuarios, autenticación JWT HS256 y cuota inmutable.
+  description: >
+    Usuarios, autenticación JWT HS256 y cuota inmutable.
+    Convención: el reservationId de un video publicado es igual a su videoId,
+    así metadata y streaming pueden liberar la cuota sin guardar otro identificador.
 servers:
   - url: http://localhost:8081/api/v1
 security:
@@ -11,6 +14,7 @@ tags:
   - name: Auth
   - name: Users
   - name: Quota
+  - name: Health
 paths:
   /users:
     post:
@@ -34,6 +38,10 @@ paths:
     get:
       tags: [Users]
       summary: Buscar usuarios por username o email
+      description: >
+        El filtro username es público (solo devuelve id y username).
+        El filtro email solo coincide con el email del propio usuario autenticado;
+        para el email de otra persona devuelve una lista vacía, para no exponer correos.
       operationId: listUsers
       parameters:
         - $ref: '#/components/parameters/UsernameQuery'
@@ -65,6 +73,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/UnauthorizedError' }
   /users/me:
     get:
@@ -94,8 +103,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Me' }
         '400': { $ref: '#/components/responses/ValidationError' }
-        '409': { $ref: '#/components/responses/ConflictError' }
         '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
   /users/me/quota:
     get:
       tags: [Quota]
@@ -117,15 +126,20 @@ paths:
       operationId: getUser
       responses:
         '200':
-          description: Usuario visible según privacidad
+          description: >
+            Si {id} es el del usuario autenticado devuelve Me (con email y cuota).
+            Si es de otra persona devuelve solo User (id y username).
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/User' }
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Me'
+                  - $ref: '#/components/schemas/User'
         '401': { $ref: '#/components/responses/UnauthorizedError' }
         '404': { $ref: '#/components/responses/NotFoundError' }
     patch:
       tags: [Users]
-      summary: Actualizar usuario; username y cuota no son editables
+      summary: Actualizar usuario propio; username y cuota no son editables
       operationId: updateUser
       requestBody:
         required: true
@@ -141,10 +155,11 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/UnauthorizedError' }
         '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
         '409': { $ref: '#/components/responses/ConflictError' }
     delete:
       tags: [Users]
-      summary: Eliminar usuario
+      summary: Eliminar usuario propio
       operationId: deleteUser
       responses:
         '204': { description: Usuario eliminado }
@@ -154,8 +169,12 @@ paths:
   /internal/quota/reservations:
     post:
       tags: [Quota]
-      security: [serviceToken: []]
+      security:
+        - serviceToken: []
       summary: Crear reserva idempotente de cuota
+      description: >
+        Idempotente por reservationId: repetir la misma petición devuelve la reserva existente (200).
+        Reutilizar un reservationId con datos distintos devuelve 409.
       operationId: reserveQuota
       requestBody:
         required: true
@@ -163,17 +182,28 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ReservationRequest' }
       responses:
+        '200':
+          description: La reserva ya existía con los mismos datos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reservation' }
         '201':
           description: Reserva creada
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Reservation' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/QuotaExceededError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
         '409': { $ref: '#/components/responses/ConflictError' }
   /internal/quota/reservations/{reservationId}/settle:
     post:
       tags: [Quota]
-      security: [serviceToken: []]
+      security:
+        - serviceToken: []
       summary: Ajustar una reserva al tamaño final
+      description: Solo aplica a reservas activas. Libera la diferencia entre lo reservado y finalBytes.
       operationId: settleQuotaReservation
       parameters:
         - $ref: '#/components/parameters/ReservationId'
@@ -191,30 +221,58 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Reservation' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/QuotaExceededError' }
         '404': { $ref: '#/components/responses/NotFoundError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
   /internal/quota/reservations/{reservationId}/release:
     post:
       tags: [Quota]
-      security: [serviceToken: []]
+      security:
+        - serviceToken: []
       summary: Liberar reserva
+      description: >
+        Funciona sobre reservas activas (subida cancelada o fallida) y sobre reservas settled
+        (video publicado que se elimina): en ambos casos devuelve los bytes a la cuota del usuario.
+        Es idempotente: liberar una reserva ya liberada devuelve 204.
       operationId: releaseQuotaReservation
       parameters:
         - $ref: '#/components/parameters/ReservationId'
       responses:
         '204': { description: Reserva liberada }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
         '404': { $ref: '#/components/responses/NotFoundError' }
   /health:
     get:
+      tags: [Health]
       security: []
-      responses: { '200': { $ref: '#/components/responses/HealthResponse' } }
+      summary: Comprobar que el servicio está vivo
+      operationId: getHealth
+      responses:
+        '200': { $ref: '#/components/responses/HealthResponse' }
   /ready:
     get:
+      tags: [Health]
       security: []
-      responses: { '200': { $ref: '#/components/responses/HealthResponse' }, '503': { $ref: '#/components/responses/ServiceUnavailableError' } }
+      summary: Comprobar que el servicio está listo (archivo de usuarios, disco)
+      operationId: getReady
+      responses:
+        '200': { $ref: '#/components/responses/HealthResponse' }
+        '503': { $ref: '#/components/responses/ServiceUnavailableError' }
 components:
   securitySchemes:
-    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT, description: JWT HS256; duración configurable; sin refresh }
-    serviceToken: { type: http, scheme: bearer, description: Token interno de servicio, distinto del JWT de usuario }
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT HS256 de usuario; duración configurable; sin refresh.
+        Claims: sub (id del usuario, UUID), username, iat y exp.
+    serviceToken:
+      type: http
+      scheme: bearer
+      description: Token interno entre servicios, distinto del JWT de usuario.
   parameters:
     UserId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     ReservationId: { name: reservationId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -299,9 +357,10 @@ components:
         traceId: { type: string }
   responses:
     ValidationError: { description: Error de validación, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    UnauthorizedError: { description: Token ausente, inválido o expirado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    UnauthorizedError: { description: Token ausente, inválido o expirado (JWT de usuario o token de servicio según el endpoint), content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     ForbiddenError: { description: Operación no permitida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    ConflictError: { description: Conflicto, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    QuotaExceededError: { description: Cuota insuficiente (código QUOTA_EXCEEDED), content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    ConflictError: { description: Conflicto (USERNAME_EXISTS, EMAIL_EXISTS, INVALID_STATE o reservationId reutilizado), content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     NotFoundError: { description: No encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     ServiceUnavailableError: { description: Servicio no listo, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     HealthResponse: { description: Estado del servicio, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [ok, ready] } } } } } }

@@ -2,14 +2,23 @@ openapi: 3.0.3
 info:
   title: Tecflix Metadata API
   version: 1.0.0
-  description: Metadata de videos, visibilidad y listado cursor-based en MongoDB.
+  description: >
+    Metadata de videos, visibilidad y listado cursor-based en MongoDB.
+    Convención: el reservationId de cuota de un video es igual a su videoId.
+    Eliminación: primero lógica (campo interno deletedAt, el video deja de aparecer en
+    consultas y listados), luego física cuando streaming confirma el borrado de archivos.
 servers:
   - url: http://localhost:8082/api/v1
 security:
   - bearerAuth: []
+tags:
+  - name: Videos
+  - name: Internal
+  - name: Health
 paths:
   /videos:
     post:
+      tags: [Videos]
       summary: Crear metadata de video
       operationId: createVideo
       requestBody:
@@ -24,7 +33,11 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/UnauthorizedError' }
     get:
+      tags: [Videos]
       summary: Listar videos públicos y propios con orden y cursor en MongoDB
+      description: >
+        Devuelve los videos del usuario autenticado más los públicos de otros usuarios.
+        El orden por author usa ownerUsername. Un cursor mal formado devuelve 400 INVALID_CURSOR.
       operationId: listVideos
       parameters:
         - { $ref: '#/components/parameters/SortBy' }
@@ -45,13 +58,17 @@ paths:
   /videos/{id}:
     parameters: [{ $ref: '#/components/parameters/VideoId' }]
     get:
+      tags: [Videos]
       summary: Consultar video
+      description: Un video privado solo lo puede consultar su dueño; para otros usuarios devuelve 403.
       operationId: getVideo
       responses:
         '200': { description: Video, content: { application/json: { schema: { $ref: '#/components/schemas/Video' } } } }
         '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
         '404': { $ref: '#/components/responses/NotFoundError' }
     patch:
+      tags: [Videos]
       summary: Actualizar metadata editable del dueño
       operationId: updateVideo
       requestBody:
@@ -64,16 +81,27 @@ paths:
         '403': { $ref: '#/components/responses/ForbiddenError' }
         '404': { $ref: '#/components/responses/NotFoundError' }
     delete:
+      tags: [Videos]
       summary: Eliminar video del dueño y coordinar borrado físico
+      description: >
+        Flujo: (1) marca el video como eliminado (deletedAt); (2) pide a streaming borrar los archivos
+        (DELETE /internal/videos/{videoId} en streaming); si streaming no responde, revierte la marca y
+        devuelve 502; (3) responde 204. Cuando streaming termina el borrado físico llama a
+        streaming-deleted y entonces metadata elimina el documento y libera la cuota
+        (release del reservationId = id en la API de usuarios).
+        Si el video tiene una subida activa devuelve 409 INVALID_STATE; el dueño debe cancelar la subida primero.
       operationId: deleteVideo
       responses:
-        '204': { description: Video eliminado }
+        '204': { description: Eliminación aceptada }
         '401': { $ref: '#/components/responses/UnauthorizedError' }
         '403': { $ref: '#/components/responses/ForbiddenError' }
         '404': { $ref: '#/components/responses/NotFoundError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
+        '502': { $ref: '#/components/responses/DependencyError' }
   /videos/{id}/visibility:
     parameters: [{ $ref: '#/components/parameters/VideoId' }]
     patch:
+      tags: [Videos]
       summary: Cambiar visibilidad del dueño
       operationId: updateVideoVisibility
       requestBody:
@@ -86,45 +114,89 @@ paths:
               properties: { visibility: { $ref: '#/components/schemas/Visibility' } }
       responses:
         '200': { description: Video actualizado, content: { application/json: { schema: { $ref: '#/components/schemas/Video' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/UnauthorizedError' }
         '403': { $ref: '#/components/responses/ForbiddenError' }
         '404': { $ref: '#/components/responses/NotFoundError' }
   /internal/videos/{id}/processing-complete:
     parameters: [{ $ref: '#/components/parameters/VideoId' }]
     post:
-      security: [serviceToken: []]
+      tags: [Internal]
+      security:
+        - serviceToken: []
       summary: Notificar procesamiento exitoso
+      description: Pasa el video a ready y guarda la duración. Idempotente si ya estaba ready con los mismos datos.
+      operationId: markProcessingComplete
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/ProcessingCompleteRequest' } } }
-      responses: { '204': { description: Estado actualizado }, '404': { $ref: '#/components/responses/NotFoundError' } }
+      responses:
+        '204': { description: Estado actualizado }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
   /internal/videos/{id}/processing-failed:
     parameters: [{ $ref: '#/components/parameters/VideoId' }]
     post:
-      security: [serviceToken: []]
+      tags: [Internal]
+      security:
+        - serviceToken: []
       summary: Notificar fallo de procesamiento
+      operationId: markProcessingFailed
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/ProcessingFailedRequest' } } }
-      responses: { '204': { description: Estado actualizado }, '404': { $ref: '#/components/responses/NotFoundError' } }
+      responses:
+        '204': { description: Estado actualizado }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '409': { $ref: '#/components/responses/ConflictError' }
   /internal/videos/{id}/streaming-deleted:
     parameters: [{ $ref: '#/components/parameters/VideoId' }]
     post:
-      security: [serviceToken: []]
+      tags: [Internal]
+      security:
+        - serviceToken: []
       summary: Confirmar borrado físico en streaming
-      responses: { '204': { description: Confirmación recibida }, '404': { $ref: '#/components/responses/NotFoundError' } }
+      description: Elimina el documento del video y libera la cuota del dueño. Idempotente.
+      operationId: confirmStreamingDeleted
+      responses:
+        '204': { description: Confirmación recibida }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '502': { $ref: '#/components/responses/DependencyError' }
   /health:
     get:
+      tags: [Health]
       security: []
-      responses: { '200': { $ref: '#/components/responses/HealthResponse' } }
+      summary: Comprobar que el servicio está vivo
+      operationId: getHealth
+      responses:
+        '200': { $ref: '#/components/responses/HealthResponse' }
   /ready:
     get:
+      tags: [Health]
       security: []
-      responses: { '200': { $ref: '#/components/responses/HealthResponse' }, '503': { $ref: '#/components/responses/ServiceUnavailableError' } }
+      summary: Comprobar que el servicio está listo (MongoDB)
+      operationId: getReady
+      responses:
+        '200': { $ref: '#/components/responses/HealthResponse' }
+        '503': { $ref: '#/components/responses/ServiceUnavailableError' }
 components:
   securitySchemes:
-    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
-    serviceToken: { type: http, scheme: bearer, description: Token interno de servicio }
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT HS256 emitido por la API de usuarios; duración configurable; sin refresh.
+        Claims: sub (id del usuario, UUID), username, iat y exp.
+    serviceToken:
+      type: http
+      scheme: bearer
+      description: Token interno entre servicios, distinto del JWT de usuario.
   parameters:
     VideoId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     SortBy: { name: sortBy, in: query, schema: { type: string, enum: [title, author, uploadedAt], default: uploadedAt } }
@@ -196,9 +268,11 @@ components:
       required: [code, message, details, traceId]
       properties: { code: { type: string }, message: { type: string }, details: { nullable: true }, traceId: { type: string } }
   responses:
-    ValidationError: { description: Validación fallida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    UnauthorizedError: { description: Autenticación requerida, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    ValidationError: { description: Validación fallida (VALIDATION_ERROR o INVALID_CURSOR), content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    UnauthorizedError: { description: Token ausente, inválido o expirado (JWT de usuario o token de servicio según el endpoint), content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     ForbiddenError: { description: Sin permisos, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     NotFoundError: { description: No encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    ConflictError: { description: Estado conflictivo (INVALID_STATE), content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    DependencyError: { description: Otro servicio no respondió (DEPENDENCY_ERROR), content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
     ServiceUnavailableError: { description: Servicio no listo, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-    HealthResponse: { description: Estado del servicio, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string } } } } } }
+    HealthResponse: { description: Estado del servicio, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [ok, ready] } } } } } }
