@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../types/api";
-import { UPLOAD_SESSION_KEY, useVideoUpload } from "./useVideoUpload";
+import { DEFAULT_UPLOAD_CHUNK_SIZE, UPLOAD_SESSION_KEY, useVideoUpload } from "./useVideoUpload";
 
 const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>;
 const video = { id: "video-1" } as never;
@@ -13,6 +13,52 @@ const status = { uploadId: "upload-1", videoId: "video-1", status: "uploading", 
 const metadata = { fileName: "video.mp4", contentType: "video/mp4", totalBytes: 3, chunkSize: 8 * 1024 * 1024 };
 
 describe("useVideoUpload", () => {
+  it.each(["", "no-numérico", "0", "-1", "1.5", "Infinity"])(
+    "usa el tamaño de fragmento por defecto con VITE_UPLOAD_CHUNK_SIZE=%s",
+    async (configuredChunkSize) => {
+      vi.stubEnv("VITE_UPLOAD_CHUNK_SIZE", configuredChunkSize);
+      const clients = {
+        createVideo: vi.fn().mockResolvedValue(video),
+        startUpload: vi.fn().mockResolvedValue(start),
+        uploadChunk: vi.fn().mockResolvedValue(undefined),
+        getUpload: vi.fn(),
+        completeUpload: vi.fn().mockResolvedValue(status),
+        getProcessing: vi.fn().mockResolvedValue({ status: "ready" }),
+        cancelUpload: vi.fn(),
+        deleteVideo: vi.fn(),
+      };
+      const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
+
+      await act(async () => {
+        await result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never);
+      });
+
+      expect(clients.startUpload.mock.calls[0][1].chunkSize).toBe(DEFAULT_UPLOAD_CHUNK_SIZE);
+    },
+  );
+
+  it("acepta VITE_UPLOAD_CHUNK_SIZE=1 sin imponer un mínimo práctico", async () => {
+    vi.stubEnv("VITE_UPLOAD_CHUNK_SIZE", "1");
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video),
+      startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockResolvedValue(undefined),
+      getUpload: vi.fn(),
+      completeUpload: vi.fn().mockResolvedValue(status),
+      getProcessing: vi.fn().mockResolvedValue({ status: "ready" }),
+      cancelUpload: vi.fn(),
+      deleteVideo: vi.fn(),
+    };
+    const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
+
+    await act(async () => {
+      await result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never);
+    });
+
+    expect(clients.startUpload.mock.calls[0][1].chunkSize).toBe(1);
+    expect(clients.uploadChunk).toHaveBeenCalledTimes(3);
+  });
+
   it("ejecuta metadata, inicio, fragmentos, completar y procesamiento", async () => {
     const clients = {
       createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),

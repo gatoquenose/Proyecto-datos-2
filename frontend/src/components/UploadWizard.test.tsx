@@ -26,6 +26,37 @@ function LocationProbe(): JSX.Element {
 }
 
 describe("UploadWizard", () => {
+  it.each(["", "no-numérico", "0", "-1", "1.5", "Infinity"])(
+    "usa el máximo por defecto con VITE_MAX_UPLOAD_BYTES=%s",
+    (configuredMaxUploadBytes) => {
+      vi.stubEnv("VITE_MAX_UPLOAD_BYTES", configuredMaxUploadBytes);
+      renderWizard();
+      fireEvent.change(screen.getByLabelText("Título"), { target: { value: "Clase 1" } });
+      fireEvent.submit(screen.getByRole("button", { name: "Continuar al archivo" }).closest("form")!);
+
+      fireEvent.change(screen.getByLabelText("Archivo de video"), {
+        target: { files: [new File(["xx"], "pequeno.mp4", { type: "video/mp4" })] },
+      });
+
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Subir video" })).toBeEnabled();
+    },
+  );
+
+  it("acepta VITE_MAX_UPLOAD_BYTES=1 sin imponer un mínimo práctico", () => {
+    vi.stubEnv("VITE_MAX_UPLOAD_BYTES", "1");
+    renderWizard();
+    fireEvent.change(screen.getByLabelText("Título"), { target: { value: "Clase 1" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Continuar al archivo" }).closest("form")!);
+
+    fireEvent.change(screen.getByLabelText("Archivo de video"), {
+      target: { files: [new File(["x"], "pequeno.mp4", { type: "video/mp4" })] },
+    });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Subir video" })).toBeEnabled();
+  });
+
   it("valida metadatos, cambia de paso y conserva el foco en el encabezado", () => {
     renderWizard();
     fireEvent.submit(screen.getByRole("button", { name: "Continuar al archivo" }).closest("form")!);

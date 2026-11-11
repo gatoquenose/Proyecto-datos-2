@@ -4,6 +4,7 @@ import type { components } from "../types/generated/metadata";
 import type { UploadClients, UploadPhase } from "../hooks/useVideoUpload";
 import { useVideoUpload } from "../hooks/useVideoUpload";
 import { TagInput } from "./TagInput";
+import { parsePositiveIntegerEnv } from "../utils/parsePositiveIntegerEnv";
 
 type CreateVideoRequest = components["schemas"]["CreateVideoRequest"];
 type Visibility = components["schemas"]["Visibility"];
@@ -38,8 +39,7 @@ interface UploadWizardProps {
 }
 
 const maxUploadBytes = (): number => {
-  const configured = Number(import.meta.env.VITE_MAX_UPLOAD_BYTES);
-  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_UPLOAD_BYTES;
+  return parsePositiveIntegerEnv(import.meta.env.VITE_MAX_UPLOAD_BYTES, DEFAULT_MAX_UPLOAD_BYTES);
 };
 
 const getResumeRecord = (): ResumeRecord | null => {

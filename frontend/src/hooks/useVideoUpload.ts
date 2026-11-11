@@ -4,6 +4,7 @@ import { ApiError } from "../types/api";
 import type { components as MetadataComponents } from "../types/generated/metadata";
 import type { components as StreamingComponents } from "../types/generated/streaming";
 import { hashFileIncrementally, DEFAULT_CHUNK_SIZE_BYTES } from "../utils/checksum";
+import { parsePositiveIntegerEnv } from "../utils/parsePositiveIntegerEnv";
 
 type CreateVideoRequest = MetadataComponents["schemas"]["CreateVideoRequest"];
 type Video = MetadataComponents["schemas"]["Video"];
@@ -18,8 +19,7 @@ export const DEFAULT_UPLOAD_POLL_MS = 2000;
 export const DEFAULT_UPLOAD_CHUNK_SIZE = DEFAULT_CHUNK_SIZE_BYTES;
 
 const configuredChunkSize = (): number => {
-  const value = Number(import.meta.env.VITE_UPLOAD_CHUNK_SIZE);
-  return Number.isSafeInteger(value) && value > 0 ? value : DEFAULT_UPLOAD_CHUNK_SIZE;
+  return parsePositiveIntegerEnv(import.meta.env.VITE_UPLOAD_CHUNK_SIZE, DEFAULT_UPLOAD_CHUNK_SIZE);
 };
 
 export interface UploadClients {

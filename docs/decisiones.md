@@ -63,6 +63,11 @@
   reales. La interfaz muestra el espacio restante únicamente en `/videos/new`
   cuando un archivo no cabe; el servidor mantiene la autoridad mediante
   `QUOTA_EXCEEDED`.
+- Las variables numericas de configuracion comparten `parsePositiveIntegerEnv`:
+  solo acepta enteros decimales seguros mayores que cero y, ante cualquier otro
+  valor, usa el valor por defecto. Un bug real con `VITE_MAX_UPLOAD_BYTES=1.5`
+  demostro que validar solo que el numero fuera positivo permitia limites no
+  enteros.
 - `VITE_MOCK_UPLOAD_FAILURE` acepta únicamente `5xx-once:N`,
   `5xx-always:N`, `network-once:N`, `network-always:N`, `400:N` y
   `checksum-final`; los valores inválidos se ignoran con advertencia en
