@@ -5,6 +5,7 @@ import type { UploadClients, UploadPhase } from "../hooks/useVideoUpload";
 import { useVideoUpload } from "../hooks/useVideoUpload";
 import { TagInput } from "./TagInput";
 import { parsePositiveIntegerEnv } from "../utils/parsePositiveIntegerEnv";
+import { validateVideoMetadata } from "../utils/videoMetadata";
 
 type CreateVideoRequest = components["schemas"]["CreateVideoRequest"];
 type Visibility = components["schemas"]["Visibility"];
@@ -84,12 +85,7 @@ export function UploadWizard({ clients, username, remainingBytes }: UploadWizard
   }, [navigate, state.phase, state.videoId]);
 
   const validateMetadata = (): boolean => {
-    const errors: Record<string, string> = {};
-    if (!title.trim() || title.length > 200) errors.title = "El título es obligatorio y debe tener entre 1 y 200 caracteres.";
-    if (description.length > 5000) errors.description = "La descripción no puede superar 5000 caracteres.";
-    if (author.length > 200) errors.author = "El autor no puede superar 200 caracteres.";
-    if (topic.length > 100) errors.topic = "El tema no puede superar 100 caracteres.";
-    if (tags.length > 30 || tags.some((tag) => tag.length > 50)) errors.tags = "Las etiquetas deben ser hasta 30 y tener máximo 50 caracteres.";
+    const errors = validateVideoMetadata({ title, description, author, topic, tags });
     setFieldErrors(errors);
     setFormError(Object.keys(errors).length > 0 ? "Corrige los errores del formulario." : "");
     const firstError = Object.keys(errors)[0];
