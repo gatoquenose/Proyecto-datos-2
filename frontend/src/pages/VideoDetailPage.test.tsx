@@ -64,7 +64,7 @@ describe("VideoDetailPage", () => {
   it("solo muestra acciones al dueño, cambia visibilidad y exige confirmación al eliminar", async () => {
     metadata.getVideo.mockResolvedValue(video());
     renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
-    expect(await screen.findByRole("link", { name: "Editar" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Editar video" })).toHaveAttribute("href", "/videos/video-1/edit");
     fireEvent.click(screen.getByRole("button", { name: /Cambiar a público/ }));
     await waitFor(() => expect(metadata.updateVideoVisibility).toHaveBeenCalledWith("video-1", "public"));
     fireEvent.click(screen.getByRole("button", { name: "Eliminar" }));
@@ -80,8 +80,15 @@ describe("VideoDetailPage", () => {
     metadata.getVideo.mockResolvedValue(video("ready", "owner-1"));
     renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
     await screen.findByRole("heading", { name: "Clase" });
-    expect(screen.queryByRole("link", { name: "Editar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Editar video" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Eliminar" })).not.toBeInTheDocument();
+  });
+
+  it("permite al dueño editar mientras el video se procesa", async () => {
+    metadata.getVideo.mockResolvedValue(video("processing"));
+    streaming.getProcessing.mockResolvedValue({ videoId: "video-1", status: "processing" });
+    renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+    expect(await screen.findByRole("link", { name: "Editar video" })).toHaveAttribute("href", "/videos/video-1/edit");
   });
 });
 

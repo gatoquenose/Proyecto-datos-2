@@ -8,6 +8,7 @@ import { NotFoundPage } from "../pages/PlaceholderPages";
 import { VideoDetailPage } from "../pages/VideoDetailPage";
 import { ProfilePage } from "../pages/ProfilePage";
 import { UploadPage } from "../pages/UploadPage";
+import { VideoEditPage } from "../pages/VideoEditPage";
 
 function HomeRedirect(): JSX.Element {
   const { token } = useAuth();
@@ -23,7 +24,7 @@ export function App(): JSX.Element {
       <Route path="/videos/mine" element={<VideoListPage />} />
       <Route path="/videos/new" element={<UploadPage />} />
       <Route path="/videos/:id" element={<VideoDetailPage />} />
-      <Route path="/videos/:id/edit" element={<VideoDetailPage />} />
+      <Route path="/videos/:id/edit" element={<VideoEditPage />} />
       <Route path="/profile" element={<ProfilePage />} />
     </Route></Route>
     <Route path="/" element={<HomeRedirect />} />
