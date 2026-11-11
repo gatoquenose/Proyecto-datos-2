@@ -16,4 +16,16 @@ describe("TagInput", () => {
     render(<TagInput value={["algoritmos"]} onChange={onChange} />);
     expect(screen.getByRole("button", { name: "Quitar etiqueta algoritmos" })).toBeInTheDocument();
   });
+
+  it("asocia el error con el input sin crear un anuncio alert adicional", () => {
+    render(<>
+      <TagInput value={[]} onChange={vi.fn()} errorId="video-tags-error" invalid />
+      <small id="video-tags-error">Las etiquetas no son válidas.</small>
+    </>);
+    const input = screen.getByLabelText("Etiquetas");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", "video-tags-help video-tags-error");
+    expect(screen.getByText("Las etiquetas no son válidas.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

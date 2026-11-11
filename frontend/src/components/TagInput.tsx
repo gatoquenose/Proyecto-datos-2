@@ -5,9 +5,11 @@ interface TagInputProps {
   onChange: (tags: string[]) => void;
   maxTags?: number;
   maxLength?: number;
+  errorId?: string;
+  invalid?: boolean;
 }
 
-export function TagInput({ value, onChange, maxTags = 30, maxLength = 50 }: TagInputProps): JSX.Element {
+export function TagInput({ value, onChange, maxTags = 30, maxLength = 50, errorId, invalid }: TagInputProps): JSX.Element {
   const [draft, setDraft] = useState("");
 
   const add = (raw: string): void => {
@@ -34,7 +36,8 @@ export function TagInput({ value, onChange, maxTags = 30, maxLength = 50 }: TagI
         }
       }}
       placeholder="Escribe una etiqueta y pulsa Enter"
-      aria-describedby="video-tags-help"
+      aria-describedby={["video-tags-help", errorId].filter(Boolean).join(" ")}
+      aria-invalid={invalid || undefined}
     />
     <small id="video-tags-help">Hasta {maxTags} etiquetas de {maxLength} caracteres.</small>
     {value.length > 0 && <ul className="tag-list" aria-label="Etiquetas añadidas">

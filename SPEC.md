@@ -95,6 +95,7 @@ Después: backend en este orden: A, B, C, D, E, G, H (sección 8). Dejar los cam
 - Eliminar una cuenta con videos: propuesta, rechazar con 409 INVALID_STATE si aún tiene videos.
 - Aclarar en streaming.yaml la base de los segmentos del manifiesto (/videos/{id}/dash/).
 - Límite de tamaño máximo de subida y multiplicador de reserva de cuota (configurables).
+- Máximo de `chunkSize` (propuesta: 64 MiB); el contrato actual solo define mínimo 1 y debe resolverse en `streaming.yaml` durante la fase del backend.
 - Rotación de la clave JWT: reinicio coordinado en v1.
 
 ## 14. Estructura de archivos

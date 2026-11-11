@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { components } from "../types/generated/metadata";
-import type { UploadClients } from "../hooks/useVideoUpload";
+import type { UploadClients, UploadPhase } from "../hooks/useVideoUpload";
 import { useVideoUpload } from "../hooks/useVideoUpload";
 import { TagInput } from "./TagInput";
 
@@ -10,6 +10,17 @@ type Visibility = components["schemas"]["Visibility"];
 
 const DEFAULT_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 const ACCEPTED_CONTENT_TYPES = ["video/mp4", "video/webm", "video/quicktime", "video/x-matroska"] as const;
+const UPLOAD_PHASE_LABELS: Record<UploadPhase, string> = {
+  idle: "inactivo",
+  creating: "creando",
+  starting: "iniciando",
+  uploading: "subiendo",
+  completing: "completando",
+  processing: "procesando",
+  published: "publicado",
+  failed: "falló",
+  canceled: "cancelado",
+};
 
 interface ResumeRecord {
   uploadId: string;
@@ -56,9 +67,11 @@ export function UploadWizard({ clients, username, remainingBytes }: UploadWizard
   const [visibility, setVisibility] = useState<Visibility>("private");
   const [file, setFile] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [fileError, setFileError] = useState("");
   const [resume, setResume] = useState<ResumeRecord | null>(getResumeRecord);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const metadata: CreateVideoRequest = { title, description, author, topic, tags, visibility, sizeBytes: file?.size ?? 0 };
   const { state, start, retryFailed, discardFailed, cancel } = useVideoUpload(clients);
 
@@ -71,13 +84,20 @@ export function UploadWizard({ clients, username, remainingBytes }: UploadWizard
   }, [navigate, state.phase, state.videoId]);
 
   const validateMetadata = (): boolean => {
-    if (!title.trim() || title.length > 200) { setFormError("El título es obligatorio y debe tener entre 1 y 200 caracteres."); return false; }
-    if (description.length > 5000) { setFormError("La descripción no puede superar 5000 caracteres."); return false; }
-    if (author.length > 200) { setFormError("El autor no puede superar 200 caracteres."); return false; }
-    if (topic.length > 100) { setFormError("El tema no puede superar 100 caracteres."); return false; }
-    if (tags.length > 30 || tags.some((tag) => tag.length > 50)) { setFormError("Las etiquetas deben ser hasta 30 y tener máximo 50 caracteres."); return false; }
-    setFormError("");
-    return true;
+    const errors: Record<string, string> = {};
+    if (!title.trim() || title.length > 200) errors.title = "El título es obligatorio y debe tener entre 1 y 200 caracteres.";
+    if (description.length > 5000) errors.description = "La descripción no puede superar 5000 caracteres.";
+    if (author.length > 200) errors.author = "El autor no puede superar 200 caracteres.";
+    if (topic.length > 100) errors.topic = "El tema no puede superar 100 caracteres.";
+    if (tags.length > 30 || tags.some((tag) => tag.length > 50)) errors.tags = "Las etiquetas deben ser hasta 30 y tener máximo 50 caracteres.";
+    setFieldErrors(errors);
+    setFormError(Object.keys(errors).length > 0 ? "Corrige los errores del formulario." : "");
+    const firstError = Object.keys(errors)[0];
+    if (firstError) window.setTimeout(() => {
+      const field = fieldRefs.current[firstError] ?? (firstError === "tags" ? document.getElementById("video-tags") : null);
+      field?.focus();
+    }, 0);
+    return Object.keys(errors).length === 0;
   };
 
   const validateFile = (selected: File | null): boolean => {
@@ -110,14 +130,19 @@ export function UploadWizard({ clients, username, remainingBytes }: UploadWizard
   return <section className="upload-page">
     <h1 ref={headingRef} tabIndex={-1}>Subir video</h1>
     <p aria-live="polite">Paso {step} de 2: {step === 1 ? "metadatos" : "archivo"}</p>
-    {step === 1 && <form className="card upload-form" onSubmit={(event) => { event.preventDefault(); if (validateMetadata()) setStep(2); }}>
+    {step === 1 && <form className="card upload-form" noValidate onSubmit={(event) => { event.preventDefault(); if (validateMetadata()) setStep(2); }}>
       <h2>Metadatos</h2>
       {formError && <p className="form-error" role="alert">{formError}</p>}
-      <label htmlFor="video-title">Título<input id="video-title" value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} required /></label>
-      <label htmlFor="video-description">Descripción<textarea id="video-description" value={description} maxLength={5000} onChange={(event) => setDescription(event.target.value)} /></label>
-      <label htmlFor="video-author">Autor<input id="video-author" value={author} maxLength={200} onChange={(event) => setAuthor(event.target.value)} /></label>
-      <label htmlFor="video-topic">Tema<input id="video-topic" value={topic} maxLength={100} onChange={(event) => setTopic(event.target.value)} /></label>
-      <TagInput value={tags} onChange={setTags} />
+      <label htmlFor="video-title">Título<input ref={(element) => { fieldRefs.current.title = element; }} id="video-title" value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} aria-invalid={Boolean(fieldErrors.title)} aria-describedby={fieldErrors.title ? "video-title-error" : undefined} /></label>
+      {fieldErrors.title && <small id="video-title-error" className="field-error">{fieldErrors.title}</small>}
+      <label htmlFor="video-description">Descripción<textarea ref={(element) => { fieldRefs.current.description = element; }} id="video-description" value={description} maxLength={5000} onChange={(event) => setDescription(event.target.value)} aria-invalid={Boolean(fieldErrors.description)} aria-describedby={fieldErrors.description ? "video-description-error" : undefined} /></label>
+      {fieldErrors.description && <small id="video-description-error" className="field-error">{fieldErrors.description}</small>}
+      <label htmlFor="video-author">Autor<input ref={(element) => { fieldRefs.current.author = element; }} id="video-author" value={author} maxLength={200} onChange={(event) => setAuthor(event.target.value)} aria-invalid={Boolean(fieldErrors.author)} aria-describedby={fieldErrors.author ? "video-author-error" : undefined} /></label>
+      {fieldErrors.author && <small id="video-author-error" className="field-error">{fieldErrors.author}</small>}
+      <label htmlFor="video-topic">Tema<input ref={(element) => { fieldRefs.current.topic = element; }} id="video-topic" value={topic} maxLength={100} onChange={(event) => setTopic(event.target.value)} aria-invalid={Boolean(fieldErrors.topic)} aria-describedby={fieldErrors.topic ? "video-topic-error" : undefined} /></label>
+      {fieldErrors.topic && <small id="video-topic-error" className="field-error">{fieldErrors.topic}</small>}
+      <TagInput value={tags} onChange={setTags} errorId={fieldErrors.tags ? "video-tags-error" : undefined} invalid={Boolean(fieldErrors.tags)} />
+      {fieldErrors.tags && <small id="video-tags-error" className="field-error">{fieldErrors.tags}</small>}
       <label htmlFor="video-visibility">Visibilidad<select id="video-visibility" value={visibility} onChange={(event) => setVisibility(event.target.value as Visibility)}><option value="private">Privado</option><option value="public">Público</option></select></label>
       <button className="button primary" type="submit">Continuar al archivo</button>
     </form>}
@@ -135,13 +160,14 @@ export function UploadWizard({ clients, username, remainingBytes }: UploadWizard
         <button className="button" type="button" onClick={() => setStep(1)} disabled={busy}>Volver a metadatos</button>
         <button className="button primary" type="button" onClick={submit} disabled={!file || Boolean(fileError) || blockedByQuota || busy}>Subir video</button>
       </div>
-      {state.phase !== "idle" && <div className="upload-status" aria-live="polite">
-        <p>Estado: {state.phase}</p>
+      {state.phase !== "idle" && <div className="upload-status">
+        <p>Estado: {UPLOAD_PHASE_LABELS[state.phase]}</p>
         {(state.phase === "uploading" || state.phase === "completing") && <div role="progressbar" aria-label="Progreso de subida" aria-valuemin={0} aria-valuemax={100} aria-valuenow={state.progress}>{state.progress}%</div>}
         {state.error && <p className="form-error" role="alert">{state.error}</p>}
         {busy && state.phase !== "processing" && <button className="button danger" type="button" onClick={() => void cancel()}>Cancelar</button>}
         {state.phase === "failed" && <><button className="button primary" type="button" onClick={retry} disabled={!file}>Reintentar</button><button className="button" type="button" onClick={() => void discardFailed()}>Descartar</button></>}
       </div>}
+      {state.phase !== "idle" && <p className="sr-only" aria-live="polite">Estado de la subida: {UPLOAD_PHASE_LABELS[state.phase]}</p>}
     </div>}
   </section>;
 }

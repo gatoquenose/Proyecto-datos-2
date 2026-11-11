@@ -57,11 +57,17 @@
 
 - El asistente de subida limita por defecto los archivos a 2 GiB mediante
   `VITE_MAX_UPLOAD_BYTES`; el valor puede reducirse sin cambiar el contrato.
-  `VITE_UPLOAD_CHUNK_SIZE` controla el tamaño de fragmento y las variables
-  `VITE_MOCK_*` documentan demoras y fallos simulados sin afectar los clientes
+  `VITE_UPLOAD_CHUNK_SIZE` controla el tamaño de fragmento. En modo mock,
+  `VITE_MOCK_UPLOAD_DELAY_MS` hace visibles las demoras y
+  `VITE_MOCK_UPLOAD_FAILURE` configura fallos simulados sin afectar los clientes
   reales. La interfaz muestra el espacio restante únicamente en `/videos/new`
   cuando un archivo no cabe; el servidor mantiene la autoridad mediante
   `QUOTA_EXCEEDED`.
+- `VITE_MOCK_UPLOAD_FAILURE` acepta únicamente `5xx-once:N`,
+  `5xx-always:N`, `network-once:N`, `network-always:N`, `400:N` y
+  `checksum-final`; los valores inválidos se ignoran con advertencia en
+  desarrollo. `VITE_MOCK_QUOTA_REMAINING_BYTES` es la fuente única de la cuota
+  simulada para `getMyQuota` y las reservas de inicio.
 
 - El contrato de `uploadChunk` fija `chunkNumber` desde cero (`minimum: 0`).
   Su ejemplo de `Content-Range` se interpreta con extremo final inclusivo:

@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { mockPassword, mockUser, mockVideos } from "./data";
+import { getMockQuota, mockPassword, mockUser, mockVideos } from "./data";
 import manifest from "./fixtures/dash/manifest.mpd?raw";
 import { hashFileIncrementally, sha256Hex } from "../utils/checksum";
 
@@ -8,7 +8,22 @@ export const mockUploadControls = {
   failNetwork: false,
   failChunkWith400: false,
   delayMs: Number(import.meta.env.VITE_MOCK_UPLOAD_DELAY_MS ?? 120),
+  configuredFailure: null as { kind: "5xx-once" | "5xx-always" | "network-once" | "network-always" | "400" | "checksum-final"; chunk?: number } | null,
 };
+
+export const configureMockUploadControls = (): void => {
+  const value = import.meta.env.VITE_MOCK_UPLOAD_FAILURE ?? "";
+  mockUploadControls.configuredFailure = null;
+  const match = /^(5xx-once|5xx-always|network-once|network-always|400):([0-9]+)$/.exec(value);
+  if (match) {
+    mockUploadControls.configuredFailure = { kind: match[1] as NonNullable<typeof mockUploadControls.configuredFailure>["kind"], chunk: Number(match[2]) };
+  } else if (value === "checksum-final") {
+    mockUploadControls.configuredFailure = { kind: "checksum-final" };
+  } else if (value && import.meta.env.DEV) {
+    console.warn(`VITE_MOCK_UPLOAD_FAILURE inválida: ${value}`);
+  }
+};
+configureMockUploadControls();
 const mockUploads = new Map<string, {
   uploadId: string; videoId: string; sizeBytes: number; chunkSizeBytes: number;
   receivedChunks: number[]; receivedBytes: number; chunks: Map<number, Uint8Array>;
@@ -34,7 +49,7 @@ export const handlers = [
   http.get("http://localhost:8081/api/v1/users/me", ({ request }) =>
     authorized(request) ? HttpResponse.json(mockUser) : error(401, "MISSING_TOKEN", "Token requerido.")),
   http.get("http://localhost:8081/api/v1/users/me/quota", ({ request }) =>
-    authorized(request) ? HttpResponse.json({ quotaBytes: mockUser.quotaBytes, usedBytes: mockUser.usedBytes, remainingBytes: mockUser.quotaBytes - mockUser.usedBytes }) : error(401, "MISSING_TOKEN", "Token requerido.")),
+    authorized(request) ? HttpResponse.json(getMockQuota()) : error(401, "MISSING_TOKEN", "Token requerido.")),
   http.patch("http://localhost:8081/api/v1/users/:id", async ({ request, params }) => {
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
     const body = await request.json() as { email?: string };
@@ -112,7 +127,7 @@ export const handlers = [
   http.post("http://localhost:8083/api/v1/videos/:videoId/upload", async ({ request, params }) => {
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
     const body = await request.json() as { fileName: string; contentType: string; totalBytes: number; chunkSize: number };
-    const remainingBytes = mockUser.quotaBytes - mockUser.usedBytes;
+    const remainingBytes = getMockQuota().remainingBytes;
     const reservationMultiplier = 1.5;
     if (body.totalBytes * reservationMultiplier > remainingBytes) return error(413, "QUOTA_EXCEEDED", "Cuota insuficiente.", { requiredBytes: body.totalBytes * reservationMultiplier });
     const uploadId = crypto.randomUUID();
@@ -128,6 +143,16 @@ export const handlers = [
     if (!upload) return error(404, "NOT_FOUND", "Subida no encontrada.");
     const chunkNumber = Number(params.chunkNumber);
     if (chunkNumber !== upload.receivedChunks.length) return error(409, "CONFLICT", "Orden de fragmentos inválido.");
+    const configuredFailure = mockUploadControls.configuredFailure;
+    if (configuredFailure?.chunk === chunkNumber && (configuredFailure.kind === "network-once" || configuredFailure.kind === "network-always")) {
+      if (configuredFailure.kind === "network-once") mockUploadControls.configuredFailure = null;
+      return HttpResponse.error();
+    }
+    if (configuredFailure?.chunk === chunkNumber && (configuredFailure.kind === "5xx-once" || configuredFailure.kind === "5xx-always")) {
+      if (configuredFailure.kind === "5xx-once") mockUploadControls.configuredFailure = null;
+      return error(503, "SERVICE_UNAVAILABLE", "Fallo 5xx simulado.");
+    }
+    if (configuredFailure?.chunk === chunkNumber && configuredFailure.kind === "400") return error(400, "VALIDATION_ERROR", "Fallo 4xx simulado.");
     if (mockUploadControls.failNetwork) return HttpResponse.error();
     if (mockUploadControls.failChunkWith5xxOnce === chunkNumber) {
       mockUploadControls.failChunkWith5xxOnce = null;
@@ -150,6 +175,7 @@ export const handlers = [
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
     const upload = mockUploads.get(String(params.uploadId));
     if (!upload) return error(404, "NOT_FOUND", "Subida no encontrada.");
+    if (mockUploadControls.configuredFailure?.kind === "checksum-final") return error(400, "VALIDATION_ERROR", "Checksum de archivo inválido.");
     return HttpResponse.json({ uploadId: upload.uploadId, videoId: upload.videoId, status: upload.status, sizeBytes: upload.sizeBytes, chunkSizeBytes: upload.chunkSizeBytes, receivedChunks: upload.receivedChunks, totalChunks: Math.ceil(upload.sizeBytes / upload.chunkSizeBytes), receivedBytes: upload.receivedBytes });
   }),
   http.post("http://localhost:8083/api/v1/uploads/:uploadId/complete", async ({ request, params }) => {

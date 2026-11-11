@@ -12,5 +12,6 @@ afterEach(() => {
   sessionStorage.clear();
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
 });
 afterAll(() => server.close());

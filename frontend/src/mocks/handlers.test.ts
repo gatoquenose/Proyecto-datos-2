@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { authStore } from "../auth/authStore";
-import { mockUser } from "./data";
-import { mockUploadControls } from "./handlers";
+import { getMockQuota, mockUser } from "./data";
+import { configureMockUploadControls, mockUploadControls } from "./handlers";
 
 describe("DASH mock manifest", () => {
   it("serves BaseURL before the first AdaptationSet", async () => {
@@ -22,6 +22,20 @@ describe("DASH mock manifest", () => {
 });
 
 describe("subidas mock", () => {
+  const startUpload = async (): Promise<{ uploadId: string }> => {
+    const response = await fetch("http://localhost:8083/api/v1/videos/mock-video/upload", {
+      method: "POST", headers: { Authorization: "Bearer mock-jwt", "Content-Type": "application/json" },
+      body: JSON.stringify({ fileName: "a.mp4", contentType: "video/mp4", totalBytes: 3, chunkSize: 8 }),
+    });
+    return await response.json() as { uploadId: string };
+  };
+
+  const chunkRequest = (uploadId: string): Promise<Response> => fetch(`http://localhost:8083/api/v1/uploads/${uploadId}/chunks/0`, {
+    method: "PUT",
+    headers: { Authorization: "Bearer mock-jwt", "Content-Type": "application/octet-stream", "X-Chunk-Checksum": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "Content-Range": "bytes 0-2/3" },
+    body: new Uint8Array([97, 98, 99]),
+  });
+
   it("valida checksum, orden y receivedBytes de fragmentos", async () => {
     authStore.setSession("mock-jwt", mockUser);
     const start = await fetch("http://localhost:8083/api/v1/videos/mock-video/upload", {
@@ -110,5 +124,62 @@ describe("subidas mock", () => {
     });
     expect(response.status).toBe(413);
     expect((await response.json()).code).toBe("QUOTA_EXCEEDED");
+  });
+
+  it.each(["5xx-once:0", "5xx-always:0"])("configura fallo 5xx mediante %s", async (failure) => {
+    vi.stubEnv("VITE_MOCK_UPLOAD_FAILURE", failure);
+    configureMockUploadControls();
+    authStore.setSession("mock-jwt", mockUser);
+    const upload = await startUpload();
+    expect((await chunkRequest(upload.uploadId)).status).toBe(503);
+    expect((await chunkRequest(upload.uploadId)).status).toBe(failure.startsWith("5xx-always") ? 503 : 204);
+  });
+
+  it.each(["network-once:0", "network-always:0"])("configura fallo de red mediante %s", async (failure) => {
+    vi.stubEnv("VITE_MOCK_UPLOAD_FAILURE", failure);
+    configureMockUploadControls();
+    authStore.setSession("mock-jwt", mockUser);
+    const upload = await startUpload();
+    await expect(chunkRequest(upload.uploadId)).rejects.toThrow(TypeError);
+    if (failure.startsWith("network-once")) expect((await chunkRequest(upload.uploadId)).status).toBe(204);
+  });
+
+  it("configura fallo 400 en un fragmento", async () => {
+    vi.stubEnv("VITE_MOCK_UPLOAD_FAILURE", "400:0");
+    configureMockUploadControls();
+    authStore.setSession("mock-jwt", mockUser);
+    const upload = await startUpload();
+    expect((await chunkRequest(upload.uploadId)).status).toBe(400);
+  });
+
+  it("configura checksum final inválido", async () => {
+    vi.stubEnv("VITE_MOCK_UPLOAD_FAILURE", "checksum-final");
+    configureMockUploadControls();
+    authStore.setSession("mock-jwt", mockUser);
+    const upload = await startUpload();
+    const response = await fetch(`http://localhost:8083/api/v1/uploads/${upload.uploadId}/complete`, {
+      method: "POST", headers: { Authorization: "Bearer mock-jwt", "Content-Type": "application/json" },
+      body: JSON.stringify({ fileChecksum: "0".repeat(64) }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("usa una cuota casi llena coherente en quota y reserva", async () => {
+    vi.stubEnv("VITE_MOCK_QUOTA_REMAINING_BYTES", "4");
+    authStore.setSession("mock-jwt", mockUser);
+    const quota = await fetch("http://localhost:8081/api/v1/users/me/quota", { headers: { Authorization: "Bearer mock-jwt" } });
+    expect(await quota.json()).toEqual(getMockQuota());
+    const response = await fetch("http://localhost:8083/api/v1/videos/mock-video/upload", {
+      method: "POST", headers: { Authorization: "Bearer mock-jwt", "Content-Type": "application/json" },
+      body: JSON.stringify({ fileName: "a.mp4", contentType: "video/mp4", totalBytes: 3, chunkSize: 8 }),
+    });
+    expect(response.status).toBe(413);
+  });
+
+  it("ignora una configuración de fallo inválida y avisa en desarrollo", () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubEnv("VITE_MOCK_UPLOAD_FAILURE", "invalid");
+    configureMockUploadControls();
+    expect(warning).toHaveBeenCalledWith("VITE_MOCK_UPLOAD_FAILURE inválida: invalid");
   });
 });

@@ -17,6 +17,11 @@ export const UPLOAD_RETRY_BASE_MS = 250;
 export const DEFAULT_UPLOAD_POLL_MS = 2000;
 export const DEFAULT_UPLOAD_CHUNK_SIZE = DEFAULT_CHUNK_SIZE_BYTES;
 
+const configuredChunkSize = (): number => {
+  const value = Number(import.meta.env.VITE_UPLOAD_CHUNK_SIZE);
+  return Number.isSafeInteger(value) && value > 0 ? value : DEFAULT_UPLOAD_CHUNK_SIZE;
+};
+
 export interface UploadClients {
   createVideo: (body: CreateVideoRequest) => Promise<Video>;
   startUpload: (videoId: string, body: {
@@ -120,7 +125,7 @@ export function useVideoUpload(clients: UploadClients, pollInterval = DEFAULT_UP
     let uploadId = resume?.uploadId ?? null;
     let cleanupAllowed = true;
     let completeInProgress = false;
-    const chunkSize = resume?.chunkSize ?? Number(import.meta.env.VITE_UPLOAD_CHUNK_SIZE ?? DEFAULT_UPLOAD_CHUNK_SIZE);
+    const chunkSize = resume?.chunkSize ?? configuredChunkSize();
     const unload = (event: BeforeUnloadEvent): void => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", unload);
     try {

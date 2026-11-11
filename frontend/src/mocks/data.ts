@@ -29,3 +29,14 @@ export const mockVideos: components["schemas"]["Video"][] = Array.from({ length:
   createdAt: new Date(Date.UTC(2026, 9, 18 - index)).toISOString(),
   updatedAt: new Date(Date.UTC(2026, 9, 19 - index)).toISOString(),
 }));
+
+const DEFAULT_MOCK_REMAINING_BYTES = mockUser.quotaBytes - mockUser.usedBytes;
+const configuredRemainingBytes = (): number => {
+  const value = Number(import.meta.env.VITE_MOCK_QUOTA_REMAINING_BYTES);
+  return Number.isSafeInteger(value) && value >= 0 && value <= mockUser.quotaBytes ? value : DEFAULT_MOCK_REMAINING_BYTES;
+};
+
+export const getMockQuota = (): { quotaBytes: number; usedBytes: number; remainingBytes: number } => {
+  const remainingBytes = configuredRemainingBytes();
+  return { quotaBytes: mockUser.quotaBytes, usedBytes: mockUser.quotaBytes - remainingBytes, remainingBytes };
+};
