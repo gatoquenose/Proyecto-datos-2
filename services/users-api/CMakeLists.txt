@@ -13,6 +13,10 @@ add_library(users_core STATIC
     src/config/Config.cpp
     src/config/ProcessEnvironment.cpp
     src/api/HealthController.cpp
+    src/storage/BTree.cpp
+    src/storage/BTreePage.cpp
+    src/storage/FilePageStore.cpp
+    src/storage/MemoryPageStore.cpp
 )
 target_include_directories(users_core PUBLIC src)
 target_link_libraries(users_core PUBLIC httplib::httplib nlohmann_json::nlohmann_json)
@@ -25,6 +29,8 @@ target_compile_options(users-api PRIVATE ${TECFLIX_WARNINGS})
 add_executable(users_tests
     tests/ConfigTest.cpp
     tests/HealthControllerTest.cpp
+    tests/BTreePageTest.cpp
+    tests/BTreeTest.cpp
 )
 target_link_libraries(users_tests PRIVATE users_core GTest::gtest GTest::gtest_main)
 target_compile_options(users_tests PRIVATE ${TECFLIX_WARNINGS})
