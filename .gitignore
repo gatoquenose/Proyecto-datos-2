@@ -21,3 +21,6 @@ compile_commands.json
 /data/*.idx
 /storage/*
 !/storage/.gitkeep
+
+build/
+vcpkg_installed/

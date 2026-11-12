@@ -15,11 +15,13 @@ if(POLICY CMP0167)
   cmake_policy(SET CMP0167 NEW)
 endif()
 
-find_package(Boost CONFIG REQUIRED COMPONENTS system)
+enable_testing()
+
+find_package(Boost CONFIG REQUIRED)
 
 add_library(tecflix_common INTERFACE)
 target_include_directories(tecflix_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/services/common/include)
-target_link_libraries(tecflix_common INTERFACE Boost::system)
+target_link_libraries(tecflix_common INTERFACE Boost::headers)
 
 function(add_tecflix_service name)
   add_executable(${name} services/${name}/src/main.cpp)
@@ -31,6 +33,10 @@ function(add_tecflix_service name)
   endif()
 endfunction()
 
-add_tecflix_service(users-api)
+# users-api tiene su propio CMakeLists (biblioteca, ejecutable y pruebas).
+add_subdirectory(services/users-api)
+
+# Temporal: metadata-api y streaming-api siguen usando el helper compartido
+# hasta que sus responsables construyan su versión.
 add_tecflix_service(metadata-api)
 add_tecflix_service(streaming-api)
