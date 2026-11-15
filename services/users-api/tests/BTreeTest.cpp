@@ -95,6 +95,100 @@ TEST(BTreeTest, TraversesKeysInAscendingOrder) {
     EXPECT_TRUE(std::ranges::is_sorted(visited));
 }
 
+TEST(BTreeTest, EraseHidesTheKey) {
+    MemoryPageStore store;
+    BTree tree{store};
+    tree.insert("alice", 10);
+    tree.insert("bob", 20);
+
+    EXPECT_TRUE(tree.erase("alice"));
+
+    EXPECT_FALSE(tree.find("alice").has_value());
+    EXPECT_EQ(tree.find("bob"), 20U);
+}
+
+TEST(BTreeTest, EraseOfUnknownOrAlreadyErasedKeyReturnsFalse) {
+    MemoryPageStore store;
+    BTree tree{store};
+    tree.insert("alice", 10);
+    tree.erase("alice");
+
+    EXPECT_FALSE(tree.erase("alice"));
+    EXPECT_FALSE(tree.erase("nadie"));
+}
+
+TEST(BTreeTest, InsertingAnErasedKeyBringsItBack) {
+    MemoryPageStore store;
+    BTree tree{store};
+    tree.insert("alice", 10);
+    tree.erase("alice");
+
+    EXPECT_TRUE(tree.insert("alice", 55));
+
+    EXPECT_EQ(tree.find("alice"), 55U);
+}
+
+TEST(BTreeTest, UpdateChangesTheValueOfALiveKey) {
+    MemoryPageStore store;
+    BTree tree{store};
+    tree.insert("alice", 10);
+
+    EXPECT_TRUE(tree.update("alice", 99));
+
+    EXPECT_EQ(tree.find("alice"), 99U);
+}
+
+TEST(BTreeTest, UpdateFailsForUnknownOrErasedKeys) {
+    MemoryPageStore store;
+    BTree tree{store};
+    tree.insert("alice", 10);
+    tree.erase("alice");
+
+    EXPECT_FALSE(tree.update("alice", 1));
+    EXPECT_FALSE(tree.update("nadie", 1));
+}
+
+TEST(BTreeTest, TraversalSkipsErasedKeys) {
+    MemoryPageStore store;
+    BTree tree{store};
+    for (const auto number : shuffledNumbers(300)) {
+        tree.insert(keyFor(number), number);
+    }
+    for (std::size_t number = 0; number < 300; number += 2) {
+        tree.erase(keyFor(number));
+    }
+
+    std::size_t visited = 0;
+    tree.forEachInOrder([&visited](const std::string&, std::uint64_t) { ++visited; });
+
+    EXPECT_EQ(visited, 150U);
+}
+
+TEST(BTreeTest, RejectsTheReservedTombstoneValue) {
+    MemoryPageStore store;
+    BTree tree{store};
+    tree.insert("alice", 10);
+
+    EXPECT_THROW(tree.insert("bob", kTombstone), std::invalid_argument);
+    EXPECT_THROW(tree.update("alice", kTombstone), std::invalid_argument);
+}
+
+TEST(BTreeTest, ErasedKeysStayErasedInDeepTrees) {
+    MemoryPageStore store;
+    BTree tree{store};
+    for (const auto number : shuffledNumbers(kManyKeys)) {
+        tree.insert(keyFor(number), number);
+    }
+
+    for (std::size_t number = 0; number < kManyKeys; number += 3) {
+        ASSERT_TRUE(tree.erase(keyFor(number)));
+    }
+
+    for (std::size_t number = 0; number < kManyKeys; ++number) {
+        ASSERT_EQ(tree.find(keyFor(number)).has_value(), number % 3 != 0);
+    }
+}
+
 TEST(BTreeTest, RejectsStoreThatIsNotAnIndex) {
     MemoryPageStore store;
     store.allocate();  // página 0 llena de ceros: sin la firma del índice
@@ -131,6 +225,22 @@ TEST_F(BTreeFileTest, DataSurvivesClosingAndReopeningTheFile) {
     for (std::size_t number = 0; number < kCount; ++number) {
         ASSERT_EQ(tree.find(keyFor(number)), number * 10);
     }
+}
+
+TEST_F(BTreeFileTest, ErasedKeysStayErasedAfterReopening) {
+    {
+        FilePageStore store{path_};
+        BTree tree{store};
+        tree.insert("alice", 1);
+        tree.insert("bob", 2);
+        tree.erase("alice");
+    }
+
+    FilePageStore store{path_};
+    const BTree tree{store};
+
+    EXPECT_FALSE(tree.find("alice").has_value());
+    EXPECT_EQ(tree.find("bob"), 2U);
 }
 
 TEST_F(BTreeFileTest, FileSizeIsAMultipleOfThePageSize) {

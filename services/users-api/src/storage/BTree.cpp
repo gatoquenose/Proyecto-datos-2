@@ -4,7 +4,9 @@
 #include <array>
 #include <iterator>
 #include <stdexcept>
+#include <span>
 #include <string_view>
+#include <utility>
 
 #include "storage/BTreeLayout.hpp"
 #include "storage/ByteCodec.hpp"
@@ -26,6 +28,12 @@ constexpr std::size_t kRootOffset = 16;
 void validateKey(const std::string& key) {
     if (key.empty() || key.size() > kMaxKeyLength) {
         throw std::invalid_argument("la clave debe tener entre 1 y 127 bytes");
+    }
+}
+
+void validateValue(std::uint64_t value) {
+    if (value == kTombstone) {
+        throw std::invalid_argument("el valor está reservado para marcar claves eliminadas");
     }
 }
 
@@ -85,12 +93,12 @@ void BTree::saveNode(const BTreeNode& node) const {
     store_.write(node.id, buffer);
 }
 
-std::optional<std::uint64_t> BTree::find(const std::string& key) const {
+std::optional<BTree::Location> BTree::locate(const std::string& key) const {
     BTreeNode node = loadNode(root_);
     for (;;) {
         const std::size_t index = lowerBoundIndex(node.keys, key);
         if (index < node.keys.size() && node.keys[index] == key) {
-            return node.values[index];
+            return Location{std::move(node), index};
         }
         if (node.leaf) {
             return std::nullopt;
@@ -99,12 +107,53 @@ std::optional<std::uint64_t> BTree::find(const std::string& key) const {
     }
 }
 
+void BTree::setValue(Location& location, std::uint64_t value) const {
+    location.node.values[location.index] = value;
+    saveNode(location.node);
+}
+
+std::optional<std::uint64_t> BTree::find(const std::string& key) const {
+    const auto location = locate(key);
+    if (!location || location->node.values[location->index] == kTombstone) {
+        return std::nullopt;
+    }
+    return location->node.values[location->index];
+}
+
 bool BTree::insert(const std::string& key, std::uint64_t value) {
     validateKey(key);
-    if (find(key)) {
+    validateValue(value);
+    if (auto location = locate(key)) {
+        if (location->node.values[location->index] != kTombstone) {
+            return false;
+        }
+        setValue(*location, value);  // la clave estaba eliminada: se reactiva
+        return true;
+    }
+    insertNew(key, value);
+    return true;
+}
+
+bool BTree::update(const std::string& key, std::uint64_t value) {
+    validateValue(value);
+    auto location = locate(key);
+    if (!location || location->node.values[location->index] == kTombstone) {
         return false;
     }
+    setValue(*location, value);
+    return true;
+}
 
+bool BTree::erase(const std::string& key) {
+    auto location = locate(key);
+    if (!location || location->node.values[location->index] == kTombstone) {
+        return false;
+    }
+    setValue(*location, kTombstone);
+    return true;
+}
+
+void BTree::insertNew(const std::string& key, std::uint64_t value) {
     BTreeNode root = loadNode(root_);
     if (root.keys.size() == kMaxKeys) {
         // La raíz está llena: el árbol crece un nivel hacia arriba.
@@ -119,7 +168,6 @@ bool BTree::insert(const std::string& key, std::uint64_t value) {
     } else {
         insertIntoNonFull(root, key, value);
     }
-    return true;
 }
 
 // Divide el hijo lleno parent.children[childIndex] en dos nodos y sube la clave
@@ -187,7 +235,9 @@ void BTree::visit(PageId id, const Visitor& visitor) const {
         if (!node.leaf) {
             visit(node.children[i], visitor);
         }
-        visitor(node.keys[i], node.values[i]);
+        if (node.values[i] != kTombstone) {
+            visitor(node.keys[i], node.values[i]);
+        }
     }
     if (!node.leaf) {
         visit(node.children[node.keys.size()], visitor);

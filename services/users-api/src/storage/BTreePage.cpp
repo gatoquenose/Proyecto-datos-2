@@ -1,7 +1,7 @@
 #include "storage/BTreePage.hpp"
 
-#include <algorithm>
 #include <stdexcept>
+#include <utility>
 
 #include "storage/BTreeLayout.hpp"
 #include "storage/ByteCodec.hpp"
@@ -33,9 +33,7 @@ void BTreePage::encode(const BTreeNode& node, PageBuffer& buffer) {
         if (key.empty() || key.size() > kMaxKeyLength) {
             throw std::logic_error("clave con largo inválido");
         }
-        const std::size_t slot = kKeysOffset + i * kKeySlotBytes;
-        buffer[slot] = static_cast<std::uint8_t>(key.size());
-        std::copy(key.begin(), key.end(), buffer.begin() + static_cast<std::ptrdiff_t>(slot + 1));
+        putFixedString(buffer, kKeysOffset + i * kKeySlotBytes, kMaxKeyLength, key);
         putLittleEndian<std::uint64_t>(buffer, kValuesOffset + i * kValueBytes, node.values[i]);
     }
     for (std::size_t i = 0; i < node.children.size(); ++i) {
@@ -53,13 +51,11 @@ BTreeNode BTreePage::decode(PageId id, const PageBuffer& buffer) {
     node.id = id;
     node.leaf = buffer[kLeafFlagOffset] == kLeafMarker;
     for (std::size_t i = 0; i < count; ++i) {
-        const std::size_t slot = kKeysOffset + i * kKeySlotBytes;
-        const std::size_t length = buffer[slot];
-        if (length == 0 || length > kMaxKeyLength) {
-            throw std::runtime_error("página corrupta: largo de clave inválido");
+        std::string key = getFixedString(buffer, kKeysOffset + i * kKeySlotBytes, kMaxKeyLength);
+        if (key.empty()) {
+            throw std::runtime_error("página corrupta: clave vacía");
         }
-        const auto first = buffer.begin() + static_cast<std::ptrdiff_t>(slot + 1);
-        node.keys.emplace_back(first, first + static_cast<std::ptrdiff_t>(length));
+        node.keys.push_back(std::move(key));
         node.values.push_back(getLittleEndian<std::uint64_t>(buffer, kValuesOffset + i * kValueBytes));
     }
     if (!node.leaf) {
