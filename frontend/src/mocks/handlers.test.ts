@@ -1,7 +1,58 @@
-import { describe, expect, it, vi } from "vitest";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { authStore } from "../auth/authStore";
-import { getMockQuota, mockUser } from "./data";
+import { getMockQuota, mockPassword, mockUser, mockVideos } from "./data";
 import { configureMockUploadControls, mockUploadControls } from "./handlers";
+
+const STREAMING_BASE_URL = "http://localhost:8083/api/v1";
+const METADATA_BASE_URL = "http://localhost:8082/api/v1";
+const DASH_SEGMENT_NAMES = [
+  "init-0.m4s", "init-1.m4s", "init-2.m4s",
+  "seg-0-00001.m4s", "seg-0-00002.m4s", "seg-0-00003.m4s",
+  "seg-1-00001.m4s", "seg-1-00002.m4s", "seg-1-00003.m4s",
+  "seg-2-00001.m4s", "seg-2-00002.m4s", "seg-2-00003.m4s",
+] as const;
+const mockAuthorization = async (): Promise<HeadersInit> => {
+  const response = await fetch("http://localhost:8081/api/v1/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: mockUser.username, password: mockPassword }),
+  });
+  const session = await response.json() as { accessToken: string; tokenType: string };
+  return { Authorization: `${session.tokenType} ${session.accessToken}` };
+};
+const assetByPath = new Map(
+  DASH_SEGMENT_NAMES.map((name) => [`/src/mocks/fixtures/dash/${name}`, name]),
+);
+// These fixture paths assume Vitest runs with frontend as process.cwd().
+const fixturePath = (name: (typeof DASH_SEGMENT_NAMES)[number]): string =>
+  resolve(process.cwd(), "src", "mocks", "fixtures", "dash", name);
+let savedVideos: typeof mockVideos = [];
+
+beforeEach(() => {
+  savedVideos = mockVideos.map((video) => ({ ...video, tags: [...video.tags] }));
+});
+
+afterEach(() => {
+  mockVideos.splice(0, mockVideos.length, ...savedVideos);
+  vi.unstubAllGlobals();
+});
+
+const installPassthroughAssetFetchAdapter = (): void => {
+  const originalFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (request.headers.get("accept") === "msw/passthrough") {
+      const name = assetByPath.get(new URL(request.url).pathname);
+      if (name) {
+        return readFile(fixturePath(name))
+          .then((bytes) => new Response(bytes));
+      }
+    }
+    return originalFetch(input, init);
+  });
+};
 
 describe("DASH mock manifest", () => {
   it("serves BaseURL before the first AdaptationSet", async () => {
@@ -21,9 +72,181 @@ describe("DASH mock manifest", () => {
   });
 });
 
+describe("DASH mock segments", () => {
+  let authorization: HeadersInit;
+
+  beforeEach(async () => {
+    authorization = await mockAuthorization();
+    installPassthroughAssetFetchAdapter();
+  });
+
+  it.each(DASH_SEGMENT_NAMES)("serves %s bytes from the fixture with the representation MIME type", async (name) => {
+    const representation = name.startsWith("init-") ? name.charAt(5) : name.charAt(4);
+    const contentType = representation === "2" ? "audio/mp4" : "video/mp4";
+    const response = await fetch(`${STREAMING_BASE_URL}/videos/mock-video/dash/${name}`, {
+      headers: authorization,
+    });
+    const actual = new Uint8Array(await response.arrayBuffer());
+    const expected = new Uint8Array(await readFile(fixturePath(name)));
+
+    // This verifies the mock handler and does not demonstrate playback in a browser.
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe(contentType);
+    expect(actual).toEqual(expected);
+  });
+
+  it("requires authorization for segments", async () => {
+    const response = await fetch(`${STREAMING_BASE_URL}/videos/mock-video/dash/init-0.m4s`);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      code: "MISSING_TOKEN",
+      traceId: "mock-trace-001",
+    });
+  });
+
+  it("returns a common 404 error for unknown segment names", async () => {
+    const response = await fetch(`${STREAMING_BASE_URL}/videos/mock-video/dash/unknown.m4s`, {
+      headers: authorization,
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({
+      code: "NOT_FOUND",
+      message: "Segmento DASH no encontrado.",
+      details: null,
+      traceId: "mock-trace-001",
+    });
+  });
+});
+
+describe("edición de metadata mock", () => {
+  const videoId = mockVideos.find((video) => video.ownerId === mockUser.id)?.id;
+  if (!videoId) throw new Error("Se requiere un video propio para probar la edición.");
+
+  const sendUpdate = (body: unknown, authorization?: HeadersInit, id = videoId): Promise<Response> =>
+    fetch(`${METADATA_BASE_URL}/videos/${id}`, {
+      method: "PATCH",
+      headers: { ...authorization, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  const expectCommonError = async (response: Response, status: number, code: string): Promise<void> => {
+    expect(response.status).toBe(status);
+    const body = await response.json() as { code: string; message: string; details: unknown; traceId: string };
+    expect(body).toMatchObject({
+      code,
+      message: expect.any(String),
+      traceId: "mock-trace-001",
+    });
+    expect(body).toHaveProperty("details");
+  };
+
+  it("actualiza metadata visible en detalle y lista", async () => {
+    const authorization = await mockAuthorization();
+    const response = await sendUpdate({ title: "Título editado en mocks" }, authorization);
+    const detailResponse = await fetch(`${METADATA_BASE_URL}/videos/${videoId}`, { headers: authorization });
+    const listResponse = await fetch(
+      `${METADATA_BASE_URL}/videos?owner=me&q=${encodeURIComponent("Título editado en mocks")}&pageSize=50`,
+      { headers: authorization },
+    );
+
+    expect(response.status).toBe(200);
+    expect((await detailResponse.json()).title).toBe("Título editado en mocks");
+    expect((await listResponse.json()).items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: videoId, title: "Título editado en mocks" })]),
+    );
+  });
+
+  it("preserva los campos que no se editaron", async () => {
+    const authorization = await mockAuthorization();
+    const original = mockVideos.find((video) => video.id === videoId);
+    if (!original) throw new Error("El video de prueba dejó de existir.");
+    const expected = {
+      ownerId: original.ownerId,
+      ownerUsername: original.ownerUsername,
+      durationSeconds: original.durationSeconds,
+      status: original.status,
+      sizeBytes: original.sizeBytes,
+      visibility: original.visibility,
+      tags: [...original.tags],
+    };
+
+    await sendUpdate({ title: "Solo cambia el título" }, authorization);
+    const response = await fetch(`${METADATA_BASE_URL}/videos/${videoId}`, { headers: authorization });
+
+    expect(await response.json()).toMatchObject({ title: "Solo cambia el título", ...expected });
+  });
+
+  it("acepta los límites máximos definidos por el contrato", async () => {
+    const authorization = await mockAuthorization();
+    const body = {
+      title: "t".repeat(200),
+      description: "d".repeat(5000),
+      author: "a".repeat(200),
+      topic: "t".repeat(100),
+      tags: Array.from({ length: 30 }, () => "g".repeat(50)),
+      uploadedAt: "2026-11-17T06:00:00Z",
+    };
+
+    const response = await sendUpdate(body, authorization);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject(body);
+  });
+
+  it("rechaza un body sin propiedades", async () => {
+    await expectCommonError(await sendUpdate({}, await mockAuthorization()), 400, "VALIDATION_ERROR");
+  });
+
+  it("rechaza propiedades no permitidas", async () => {
+    await expectCommonError(
+      await sendUpdate({ title: "Título válido", status: "ready" }, await mockAuthorization()),
+      400,
+      "VALIDATION_ERROR",
+    );
+  });
+
+  it.each([
+    ["title vacío", { title: "" }],
+    ["title de más de 200 caracteres", { title: "t".repeat(201) }],
+    ["description de más de 5000 caracteres", { description: "d".repeat(5001) }],
+    ["author de más de 200 caracteres", { author: "a".repeat(201) }],
+    ["topic de más de 100 caracteres", { topic: "t".repeat(101) }],
+    ["más de 30 tags", { tags: Array.from({ length: 31 }, () => "tag") }],
+    ["tag de más de 50 caracteres", { tags: ["g".repeat(51)] }],
+    ["uploadedAt que no es date-time", { uploadedAt: "2026-13-40T25:61:61Z" }],
+  ])("rechaza %s", async (_caseName, body) => {
+    await expectCommonError(await sendUpdate(body, await mockAuthorization()), 400, "VALIDATION_ERROR");
+  });
+
+  it("requiere autenticación", async () => {
+    await expectCommonError(await sendUpdate({ title: "Sin credencial" }), 401, "MISSING_TOKEN");
+  });
+
+  it("devuelve 404 para un video inexistente", async () => {
+    await expectCommonError(
+      await sendUpdate({ title: "Título" }, await mockAuthorization(), "video-inexistente"),
+      404,
+      "NOT_FOUND",
+    );
+  });
+
+  it("devuelve 403 para un video de otro usuario", async () => {
+    const foreignVideo = mockVideos.find((video) => video.ownerId !== mockUser.id);
+    if (!foreignVideo) throw new Error("Se requiere un video ajeno para probar permisos.");
+
+    await expectCommonError(
+      await sendUpdate({ title: "Sin permiso" }, await mockAuthorization(), foreignVideo.id),
+      403,
+      "FORBIDDEN",
+    );
+  });
+});
+
 describe("subidas mock", () => {
-  const startUpload = async (): Promise<{ uploadId: string }> => {
-    const response = await fetch("http://localhost:8083/api/v1/videos/mock-video/upload", {
+  const startUpload = async (videoId = "mock-video"): Promise<{ uploadId: string }> => {
+    const response = await fetch(`${STREAMING_BASE_URL}/videos/${videoId}/upload`, {
       method: "POST", headers: { Authorization: "Bearer mock-jwt", "Content-Type": "application/json" },
       body: JSON.stringify({ fileName: "a.mp4", contentType: "video/mp4", totalBytes: 3, chunkSize: 8 }),
     });
@@ -34,6 +257,40 @@ describe("subidas mock", () => {
     method: "PUT",
     headers: { Authorization: "Bearer mock-jwt", "Content-Type": "application/octet-stream", "X-Chunk-Checksum": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "Content-Range": "bytes 0-2/3" },
     body: new Uint8Array([97, 98, 99]),
+  });
+
+  it("crea con duración cero, publica con 12 segundos y conserva la duración precargada", async () => {
+    const authorization = await mockAuthorization();
+    const preloaded = mockVideos.find((video) => video.status === "ready");
+    if (!preloaded) throw new Error("Se requiere un video precargado listo para esta prueba.");
+    const originalDurations = mockVideos.map(({ id, durationSeconds }) => ({ id, durationSeconds }));
+    const createdResponse = await fetch(`${METADATA_BASE_URL}/videos`, {
+      method: "POST",
+      headers: { ...authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Video DASH nuevo", visibility: "private", sizeBytes: 3 }),
+    });
+    const created = await createdResponse.json() as { id: string; durationSeconds: number };
+    const upload = await startUpload(created.id);
+    const chunkResponse = await chunkRequest(upload.uploadId);
+    const checksum = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    const completeResponse = await fetch(`${STREAMING_BASE_URL}/uploads/${upload.uploadId}/complete`, {
+      method: "POST",
+      headers: { ...authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ fileChecksum: checksum }),
+    });
+    await fetch(`${STREAMING_BASE_URL}/videos/${created.id}/processing`, { headers: authorization });
+    const processingResponse = await fetch(`${STREAMING_BASE_URL}/videos/${created.id}/processing`, { headers: authorization });
+    const published = await fetch(`${METADATA_BASE_URL}/videos/${created.id}`, { headers: authorization });
+
+    expect(createdResponse.status).toBe(201);
+    expect(originalDurations).toHaveLength(30);
+    expect(created.durationSeconds).toBe(0);
+    expect(chunkResponse.status).toBe(204);
+    expect(completeResponse.status).toBe(202);
+    expect((await processingResponse.json()).status).toBe("ready");
+    expect((await published.json()).durationSeconds).toBe(12);
+    expect(mockVideos.filter((video) => originalDurations.some(({ id }) => id === video.id))
+      .map(({ id, durationSeconds }) => ({ id, durationSeconds }))).toEqual(originalDurations);
   });
 
   it("valida checksum, orden y receivedBytes de fragmentos", async () => {

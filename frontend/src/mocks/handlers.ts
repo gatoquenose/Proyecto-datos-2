@@ -1,7 +1,36 @@
-import { http, HttpResponse } from "msw";
+import { bypass, http, HttpResponse } from "msw";
 import { getMockQuota, mockPassword, mockUser, mockVideos } from "./data";
 import manifest from "./fixtures/dash/manifest.mpd?raw";
 import { hashFileIncrementally, sha256Hex } from "../utils/checksum";
+
+const MOCK_PUBLISHED_DURATION_SECONDS = 12;
+const DASH_SEGMENT_FILES = [
+  ["init-0.m4s", "./fixtures/dash/init-0.m4s", "video/mp4"],
+  ["init-1.m4s", "./fixtures/dash/init-1.m4s", "video/mp4"],
+  ["init-2.m4s", "./fixtures/dash/init-2.m4s", "audio/mp4"],
+  ["seg-0-00001.m4s", "./fixtures/dash/seg-0-00001.m4s", "video/mp4"],
+  ["seg-0-00002.m4s", "./fixtures/dash/seg-0-00002.m4s", "video/mp4"],
+  ["seg-0-00003.m4s", "./fixtures/dash/seg-0-00003.m4s", "video/mp4"],
+  ["seg-1-00001.m4s", "./fixtures/dash/seg-1-00001.m4s", "video/mp4"],
+  ["seg-1-00002.m4s", "./fixtures/dash/seg-1-00002.m4s", "video/mp4"],
+  ["seg-1-00003.m4s", "./fixtures/dash/seg-1-00003.m4s", "video/mp4"],
+  ["seg-2-00001.m4s", "./fixtures/dash/seg-2-00001.m4s", "audio/mp4"],
+  ["seg-2-00002.m4s", "./fixtures/dash/seg-2-00002.m4s", "audio/mp4"],
+  ["seg-2-00003.m4s", "./fixtures/dash/seg-2-00003.m4s", "audio/mp4"],
+] as const;
+const dashSegmentUrls = import.meta.glob<string>("./fixtures/dash/*.m4s", {
+  eager: true,
+  query: "?url",
+  import: "default",
+});
+const dashSegments = new Map<string, { assetUrl: string; contentType: "video/mp4" | "audio/mp4" }>(
+  DASH_SEGMENT_FILES.map(([name, path, contentType]) => {
+  const assetUrl = dashSegmentUrls[path];
+  if (!assetUrl) throw new Error(`Missing DASH fixture asset: ${name}`);
+  return [name, { assetUrl, contentType }] as const;
+  }),
+);
+const newlyCreatedVideos = new WeakSet<(typeof mockVideos)[number]>();
 
 export const mockUploadControls = {
   failChunkWith5xxOnce: null as number | null,
@@ -34,6 +63,54 @@ const authorized = (request: Request): boolean => request.headers.get("Authoriza
 
 const error = (status: number, code: string, message: string, details: Record<string, unknown> | null = null) =>
     HttpResponse.json({ code, message, details, traceId: "mock-trace-001" }, { status });
+
+const UPDATE_VIDEO_FIELDS = ["title", "description", "author", "topic", "tags", "uploadedAt"] as const;
+type UpdateVideoRequest = Partial<Pick<
+  (typeof mockVideos)[number],
+  (typeof UPDATE_VIDEO_FIELDS)[number]
+>>;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isDateTime = (value: string): boolean => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(value);
+  if (!match || !Number.isFinite(Date.parse(value))) return false;
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, offsetHourText, offsetMinuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const offsetHour = offsetHourText === undefined ? 0 : Number(offsetHourText);
+  const offsetMinute = offsetMinuteText === undefined ? 0 : Number(offsetMinuteText);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = month === 2 ? (leapYear ? 29 : 28) : [4, 6, 9, 11].includes(month) ? 30 : 31;
+
+  return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth
+    && hour <= 23 && minute <= 59 && second <= 59
+    && offsetHour <= 23 && offsetMinute <= 59;
+};
+
+const isUpdateVideoRequest = (value: unknown): value is UpdateVideoRequest => {
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value);
+  if (keys.length === 0 || keys.some((key) => !UPDATE_VIDEO_FIELDS.includes(key as (typeof UPDATE_VIDEO_FIELDS)[number]))) {
+    return false;
+  }
+
+  if ("title" in value && (typeof value.title !== "string" || value.title.length < 1 || value.title.length > 200)) return false;
+  if ("description" in value && (typeof value.description !== "string" || value.description.length > 5000)) return false;
+  if ("author" in value && (typeof value.author !== "string" || value.author.length > 200)) return false;
+  if ("topic" in value && (typeof value.topic !== "string" || value.topic.length > 100)) return false;
+  if ("tags" in value && (!Array.isArray(value.tags) || value.tags.length > 30
+    || value.tags.some((tag) => typeof tag !== "string" || tag.length > 50))) return false;
+  if ("uploadedAt" in value && (typeof value.uploadedAt !== "string" || !isDateTime(value.uploadedAt))) return false;
+
+  return true;
+};
 
 export const handlers = [
   http.post("http://localhost:8081/api/v1/users", async ({ request }) => {
@@ -88,12 +165,33 @@ export const handlers = [
       sizeBytes: Number(body.sizeBytes ?? 0), status: "processing" as const, createdAt: now, updatedAt: now,
     };
     mockVideos.unshift(video);
+    newlyCreatedVideos.add(video);
     return HttpResponse.json(video, { status: 201 });
   }),
   http.get("http://localhost:8082/api/v1/videos/:id", ({ request, params }) => {
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
     const video = mockVideos.find((item) => item.id === String(params.id));
     return video ? HttpResponse.json(video) : error(404, "NOT_FOUND", "Video no encontrado.");
+  }),
+  http.patch("http://localhost:8082/api/v1/videos/:id", async ({ request, params }) => {
+    if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
+    const video = mockVideos.find((item) => item.id === String(params.id));
+    if (!video) return error(404, "NOT_FOUND", "Video no encontrado.");
+    if (video.ownerId !== mockUser.id) return error(403, "FORBIDDEN", "Sin permisos.");
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch (parseError) {
+      if (!(parseError instanceof SyntaxError)) throw parseError;
+      return error(400, "VALIDATION_ERROR", "Datos de video inválidos.", { fields: ["body"] });
+    }
+    if (!isUpdateVideoRequest(body)) {
+      return error(400, "VALIDATION_ERROR", "Datos de video inválidos.", { fields: ["body"] });
+    }
+
+    Object.assign(video, body, { updatedAt: new Date().toISOString() });
+    return HttpResponse.json(video);
   }),
   http.patch("http://localhost:8082/api/v1/videos/:id/visibility", async ({ request, params }) => {
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
@@ -118,7 +216,10 @@ export const handlers = [
       upload.processingChecks += 1;
       if (upload.processingChecks >= 2) {
         upload.status = "published";
-        if (video) video.status = "ready";
+        if (video) {
+          video.status = "ready";
+          if (newlyCreatedVideos.has(video)) Object.assign(video, { durationSeconds: MOCK_PUBLISHED_DURATION_SECONDS });
+        }
       }
     }
     const status = upload?.status === "processing" ? "processing" : upload?.status === "published" ? "ready" : video?.status;
@@ -194,6 +295,19 @@ export const handlers = [
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
     mockUploads.delete(String(params.uploadId));
     return new HttpResponse(null, { status: 204 });
+  }),
+  http.get("http://localhost:8083/api/v1/videos/:videoId/dash/:segmentName", async ({ request, params }) => {
+    if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
+    const segment = dashSegments.get(String(params.segmentName));
+    if (!segment) return error(404, "NOT_FOUND", "Segmento DASH no encontrado.");
+    // The browser dev server is the origin that serves these fixture assets.
+    const assetResponse = await fetch(bypass(new URL(segment.assetUrl, globalThis.location.origin)));
+    if (!assetResponse.ok) throw new Error(`DASH fixture request failed with status ${assetResponse.status}.`);
+    const bytes = new Uint8Array(await assetResponse.arrayBuffer());
+    return new HttpResponse(bytes, {
+      status: 200,
+      headers: { "Content-Type": segment.contentType },
+    });
   }),
   http.get("http://localhost:8083/api/v1/videos/:videoId/manifest.mpd", ({ request }) => {
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
