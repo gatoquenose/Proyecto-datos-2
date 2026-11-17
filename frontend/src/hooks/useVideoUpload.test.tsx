@@ -104,6 +104,35 @@ describe("useVideoUpload", () => {
     expect(result.current.state.phase).toBe("published");
   });
 
+  it.each([403, 413])("reconoce QUOTA_EXCEEDED por código con HTTP %i", async (httpStatus) => {
+    const quota = new ApiError(httpStatus, {
+      code: "QUOTA_EXCEEDED",
+      message: "Respuesta genérica del servidor",
+      details: null,
+      traceId: "x",
+    });
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video),
+      startUpload: vi.fn().mockRejectedValue(quota),
+      uploadChunk: vi.fn(),
+      getUpload: vi.fn(),
+      completeUpload: vi.fn(),
+      getProcessing: vi.fn(),
+      cancelUpload: vi.fn(),
+      deleteVideo: vi.fn().mockResolvedValue(undefined),
+    };
+    const { result } = renderHook(() => useVideoUpload(clients), { wrapper });
+
+    await act(async () => {
+      await expect(result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never))
+        .rejects.toThrow("Respuesta genérica del servidor");
+    });
+
+    expect(result.current.state.error).toBe("No tienes suficiente cuota disponible.");
+    expect(clients.deleteVideo).toHaveBeenCalledWith("video-1");
+    expect(clients.startUpload).toHaveBeenCalledTimes(1);
+  });
+
   it("agota los reintentos de red, pasa a failed y limpia el huérfano", async () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
     const clients = {
@@ -112,7 +141,10 @@ describe("useVideoUpload", () => {
       getUpload: vi.fn(), completeUpload: vi.fn(), getProcessing: vi.fn(),
       cancelUpload: vi.fn().mockResolvedValue(undefined), deleteVideo: vi.fn().mockResolvedValue(undefined),
     };
-    const { result } = renderHook(() => useVideoUpload(clients), { wrapper });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    const localWrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useVideoUpload(clients), { wrapper: localWrapper });
     await act(async () => {
       await expect(result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never)).rejects.toThrow("Failed to fetch");
     });
@@ -120,6 +152,7 @@ describe("useVideoUpload", () => {
     expect(clients.cancelUpload).toHaveBeenCalledWith("upload-1");
     expect(clients.deleteVideo).toHaveBeenCalledWith("video-1");
     expect(result.current.state.phase).toBe("failed");
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["quota"] });
   });
 
   it("no limpia ante 401 y conserva la reanudación", async () => {
@@ -190,7 +223,10 @@ describe("useVideoUpload", () => {
       getUpload: vi.fn(), completeUpload: vi.fn(), getProcessing: vi.fn(),
       cancelUpload: vi.fn().mockResolvedValue(undefined), deleteVideo: vi.fn().mockResolvedValue(undefined),
     };
-    const { result } = renderHook(() => useVideoUpload(clients), { wrapper });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    const localWrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useVideoUpload(clients), { wrapper: localWrapper });
     let running: Promise<void> | undefined;
     await act(async () => {
       running = result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never);
@@ -204,6 +240,7 @@ describe("useVideoUpload", () => {
     expect(clients.cancelUpload).toHaveBeenCalledWith("upload-1");
     expect(clients.deleteVideo).toHaveBeenCalledWith("video-1");
     expect(result.current.state.phase).toBe("canceled");
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["quota"] });
   });
 
   it("deja failed y conserva la reanudación si el checksum final es rechazado", async () => {

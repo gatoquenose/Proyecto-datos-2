@@ -33,7 +33,13 @@ export function VideoDetailPage(): JSX.Element {
   });
   const remove = useMutation({
     mutationFn: () => metadataClient.deleteVideo(id),
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["videos"] }); navigate("/videos/mine"); },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["videos"] }),
+        queryClient.invalidateQueries({ queryKey: ["quota"] }),
+      ]);
+      navigate("/videos/mine");
+    },
   });
   useEffect(() => {
     if (processing.data?.status === "ready") {

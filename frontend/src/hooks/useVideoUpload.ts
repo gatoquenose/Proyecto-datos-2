@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ApiError } from "../types/api";
+import { ApiError, friendlyErrorMessage } from "../types/api";
 import type { components as MetadataComponents } from "../types/generated/metadata";
 import type { components as StreamingComponents } from "../types/generated/streaming";
 import { hashFileIncrementally, DEFAULT_CHUNK_SIZE_BYTES } from "../utils/checksum";
@@ -172,7 +172,9 @@ export function useVideoUpload(clients: UploadClients, pollInterval = DEFAULT_UP
       if (cleanupAllowed && !preserveForInvalidComplete && uploadId) await Promise.resolve(clients.cancelUpload(uploadId)).catch(() => { cleanupFailed = true; });
       if (cleanupAllowed && !preserveForInvalidComplete && videoId) await Promise.resolve(clients.deleteVideo(videoId)).catch(() => { cleanupFailed = true; });
       if (!controller.signal.aborted) {
-        const message = error instanceof Error ? error.message : "No se pudo completar la subida.";
+        const message = error instanceof ApiError && error.body.code === "QUOTA_EXCEEDED"
+          ? friendlyErrorMessage(error.body.code)
+          : error instanceof Error ? error.message : "No se pudo completar la subida.";
         dispatch({ type: "error", message: cleanupFailed ? `${message} No se pudo limpiar el registro ${videoId ?? ""}.` : message });
         void queryClient.invalidateQueries({ queryKey: ["quota"] });
         void queryClient.invalidateQueries({ queryKey: ["videos"] });

@@ -149,7 +149,6 @@ export function UploadWizard({ clients, username, remainingBytes }: UploadWizard
       {blockedByQuota && <div className="form-error" role="alert">
         <strong>El archivo supera el espacio disponible.</strong>
         <p>El servidor reserva espacio adicional para el procesamiento; si responde QUOTA_EXCEEDED, esa respuesta es la fuente de verdad.</p>
-        {remainingBytes !== undefined && <small>Espacio restante: {remainingBytes} bytes.</small>}
       </div>}
       {sameAsResume && <p className="success-box" role="status">Existe una subida pendiente para este archivo. Puedes reanudarla.</p>}
       <div className="upload-actions">

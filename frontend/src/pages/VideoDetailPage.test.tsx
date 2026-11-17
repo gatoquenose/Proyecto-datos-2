@@ -63,7 +63,9 @@ describe("VideoDetailPage", () => {
 
   it("solo muestra acciones al dueño, cambia visibilidad y exige confirmación al eliminar", async () => {
     metadata.getVideo.mockResolvedValue(video());
-    renderPage(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateQueries = vi.spyOn(client, "invalidateQueries");
+    renderPage(client);
     expect(await screen.findByRole("link", { name: "Editar video" })).toHaveAttribute("href", "/videos/video-1/edit");
     fireEvent.click(screen.getByRole("button", { name: /Cambiar a público/ }));
     await waitFor(() => expect(metadata.updateVideoVisibility).toHaveBeenCalledWith("video-1", "public"));
@@ -72,6 +74,7 @@ describe("VideoDetailPage", () => {
     expect(metadata.deleteVideo).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Eliminar video" }));
     await waitFor(() => expect(metadata.deleteVideo).toHaveBeenCalledWith("video-1"));
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["quota"] }));
     expect(screen.getByTestId("location")).toHaveTextContent("/videos/mine");
   });
 
