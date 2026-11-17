@@ -124,6 +124,32 @@ describe("UploadWizard", () => {
     expect(screen.getByRole("status")).toHaveTextContent("reanudarla");
   });
 
+  it.each([
+    ["nombre", "otra.mp4", 3, "video/mp4"],
+    ["tamaño", "clase.mp4", 4, "video/mp4"],
+    ["tipo", "clase.mp4", 3, "video/webm"],
+  ])("no reanuda si solo cambia el %s del archivo", async (_changed, fileName, size, contentType) => {
+    sessionStorage.setItem("tecflix.pending-upload", JSON.stringify({
+      uploadId: "upload-1", videoId: "video-1", fileName: "clase.mp4", sizeBytes: 3, contentType: "video/mp4", chunkSize: 2,
+    }));
+    const uploadClients = clients();
+    uploadClients.createVideo = vi.fn().mockResolvedValue({ id: "new-video" });
+    uploadClients.startUpload = vi.fn().mockResolvedValue({ uploadId: "new-upload", videoId: "new-video", reservedBytes: 100, receivedBytes: 0, status: "uploading" });
+    uploadClients.uploadChunk = vi.fn().mockResolvedValue(undefined);
+    uploadClients.completeUpload = vi.fn().mockResolvedValue({ status: "processing" } as never);
+    uploadClients.getProcessing = vi.fn().mockResolvedValue({ status: "ready" });
+    renderWizard({ clients: uploadClients });
+    fireEvent.change(screen.getByLabelText("Título"), { target: { value: "Clase 1" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Continuar al archivo" }).closest("form")!);
+    const file = new File(["x".repeat(size)], fileName, { type: contentType });
+    fireEvent.change(screen.getByLabelText("Archivo de video"), { target: { files: [file] } });
+
+    expect(screen.queryByText(/Existe una subida pendiente/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Subir video" }));
+    await waitFor(() => expect(uploadClients.startUpload).toHaveBeenCalledTimes(1));
+    expect(uploadClients.getUpload).not.toHaveBeenCalled();
+  });
+
   it("muestra la barra de progreso con atributos y el anuncio de fase", async () => {
     let resolveChunk: (() => void) | undefined;
     const uploadClients = clients();
@@ -174,11 +200,13 @@ describe("UploadWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Subir video" }));
     await waitFor(() => expect(uploadClients.uploadChunk).toHaveBeenCalledTimes(1));
     expect(add).toHaveBeenCalledWith("beforeunload", expect.any(Function));
+    expect(remove).not.toHaveBeenCalledWith("beforeunload", expect.any(Function));
     fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     await waitFor(() => expect(screen.getByText("Estado: cancelado")).toBeInTheDocument());
     expect(uploadClients.uploadChunk).toHaveBeenCalledTimes(1);
     expect(uploadClients.cancelUpload).toHaveBeenCalledWith("upload-1");
     expect(uploadClients.deleteVideo).toHaveBeenCalledWith("video-1");
+    expect(sessionStorage.getItem("tecflix.pending-upload")).toBeNull();
     await waitFor(() => expect(remove).toHaveBeenCalledWith("beforeunload", expect.any(Function)));
   });
 
@@ -198,8 +226,40 @@ describe("UploadWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Subir video" }));
     await screen.findByRole("button", { name: "Reintentar" });
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
-    await waitFor(() => expect(uploadClients.startUpload).toHaveBeenCalledTimes(2));
-    expect(screen.getByTestId("upload-location")).toHaveTextContent("/");
+    await waitFor(() => expect(screen.getByTestId("upload-location")).toHaveTextContent("/videos/video-1"));
+    expect(uploadClients.startUpload).toHaveBeenCalledTimes(1);
+    expect(uploadClients.uploadChunk).toHaveBeenCalledTimes(1);
+    expect(uploadClients.completeUpload).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
+  });
+
+  it("mantiene un mensaje neutral y ofrece reintentar o descartar tras el 400", async () => {
+    const uploadClients = clients();
+    const invalid = new ApiError(400, { code: "VALIDATION_ERROR", message: "No se pudo completar.", details: null, traceId: "trace" });
+    uploadClients.createVideo = vi.fn().mockResolvedValue({ id: "video-1" });
+    uploadClients.startUpload = vi.fn().mockResolvedValue({ uploadId: "upload-1", videoId: "video-1", reservedBytes: 100, receivedBytes: 0, status: "uploading" });
+    uploadClients.uploadChunk = vi.fn().mockResolvedValue(undefined);
+    uploadClients.completeUpload = vi.fn().mockRejectedValue(invalid);
+    uploadClients.getUpload = vi.fn().mockResolvedValue({ status: "uploading", receivedBytes: 3 });
+    uploadClients.cancelUpload = vi.fn().mockResolvedValue(undefined);
+    uploadClients.deleteVideo = vi.fn().mockResolvedValue(undefined);
+    renderWizard({ clients: uploadClients });
+    fireEvent.change(screen.getByLabelText("Título"), { target: { value: "Clase 1" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Continuar al archivo" }).closest("form")!);
+    fireEvent.change(screen.getByLabelText("Archivo de video"), { target: { files: [new File(["abc"], "clase.mp4", { type: "video/mp4" })] } });
+    fireEvent.click(screen.getByRole("button", { name: "Subir video" }));
+
+    expect(await screen.findByRole("button", { name: "Reintentar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Descartar" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("No se pudo completar.");
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/resolverá|solucionará|arreglará/i);
+    expect(sessionStorage.getItem("tecflix.pending-upload")).toContain("upload-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    await waitFor(() => expect(uploadClients.completeUpload).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Descartar" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/resolverá|solucionará|arreglará/i);
   });
 
   it("descarta una subida fallida y limpia sus registros", async () => {

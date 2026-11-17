@@ -29,7 +29,7 @@ describe("sha256Hex", () => {
     expect(file.slice(16).size).toBe(4);
   });
 
-  it("calcula el checksum independiente de un fragmento contra node:crypto", async () => {
+  it("calcula el checksum independiente de un fragmento contra crypto.subtle", async () => {
     const source = new TextEncoder().encode("fragmento independiente");
     const chunk = new Blob([source]);
     await expect(hashChunk(chunk)).resolves.toBe(await webCryptoSha256Hex(source));
