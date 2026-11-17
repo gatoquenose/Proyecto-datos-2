@@ -64,7 +64,7 @@ const reducer = (state: UploadState, action: Action): UploadState => {
 const isUnauthorized = (error: unknown): boolean => error instanceof ApiError && error.status === 401;
 const isInvalidComplete = (error: unknown): boolean => error instanceof ApiError && error.status === 400;
 const isRetryable = (error: unknown): boolean =>
-  !(error instanceof ApiError) || error.status >= 500;
+  error instanceof TypeError || (error instanceof ApiError && error.status >= 500);
 const delay = (milliseconds: number, signal: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
     const timer = window.setTimeout(resolve, milliseconds);

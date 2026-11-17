@@ -1,6 +1,10 @@
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { hashChunk, hashFileIncrementally, sha256Hex } from "./checksum";
+
+const webCryptoSha256Hex = async (source: Uint8Array): Promise<string> => {
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(source).buffer);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+};
 
 describe("sha256Hex", () => {
   it("coincide con el vector SHA-256 de abc", async () => {
@@ -17,20 +21,18 @@ describe("sha256Hex", () => {
     bytes.forEach((_, index) => { bytes[index] = index; });
     const file = new Blob([bytes]);
     const result = await hashFileIncrementally(file, chunkSize);
-    const expectedFile = createHash("sha256").update(Buffer.from(bytes)).digest("hex");
+    const expectedFile = await webCryptoSha256Hex(bytes);
     const expectedChunks = [bytes.slice(0, 8), bytes.slice(8, 16), bytes.slice(16)];
 
     expect(result.fileChecksum).toBe(expectedFile);
-    expect(result.chunkChecksums).toEqual(expectedChunks.map((chunk) =>
-      createHash("sha256").update(Buffer.from(chunk)).digest("hex")));
+    expect(result.chunkChecksums).toEqual(await Promise.all(expectedChunks.map(webCryptoSha256Hex)));
     expect(file.slice(16).size).toBe(4);
   });
 
   it("calcula el checksum independiente de un fragmento contra node:crypto", async () => {
     const source = new TextEncoder().encode("fragmento independiente");
     const chunk = new Blob([source]);
-    const bytes = Buffer.from(source);
-    await expect(hashChunk(chunk)).resolves.toBe(createHash("sha256").update(bytes).digest("hex"));
+    await expect(hashChunk(chunk)).resolves.toBe(await webCryptoSha256Hex(source));
   });
 
   it("rechaza archivos vacíos para la subida", async () => {

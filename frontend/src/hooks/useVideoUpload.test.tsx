@@ -12,6 +12,16 @@ const status = { uploadId: "upload-1", videoId: "video-1", status: "uploading", 
 };
 const metadata = { fileName: "video.mp4", contentType: "video/mp4", totalBytes: 3, chunkSize: 8 * 1024 * 1024 };
 
+const withFakeTimers = async (run: () => Promise<void>): Promise<void> => {
+  // jsdom lee Blob con FileReader (sin arrayBuffer); 250 * 2 ** (intento - 1) + 0.5 * 250 da 375 y 625 ms.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    await run();
+  } finally {
+    vi.useRealTimers();
+  }
+};
+
 describe("useVideoUpload", () => {
   it.each(["", "no-numérico", "0", "-1", "1.5", "Infinity"])(
     "usa el tamaño de fragmento por defecto con VITE_UPLOAD_CHUNK_SIZE=%s",
@@ -74,9 +84,8 @@ describe("useVideoUpload", () => {
     expect(result.current.state.phase).toBe("published");
   });
 
-  it("reintenta 5xx pero no 4xx", async () => {
+  it("reintenta un ApiError 5xx", async () => {
     const transient = new ApiError(503, { code: "SERVICE_UNAVAILABLE", message: "down", details: null, traceId: "x" });
-    const permanent = new ApiError(400, { code: "VALIDATION_ERROR", message: "bad", details: null, traceId: "x" });
     const clients = {
       createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
       uploadChunk: vi.fn().mockRejectedValueOnce(transient).mockResolvedValue(undefined), getUpload: vi.fn(), completeUpload: vi.fn().mockResolvedValue(status),
@@ -85,9 +94,21 @@ describe("useVideoUpload", () => {
     const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
     await act(async () => { await result.current.start(new File(["a"], "video.mp4", { type: "video/mp4" }), metadata as never); });
     expect(clients.uploadChunk).toHaveBeenCalledTimes(2);
-    clients.startUpload.mockRejectedValueOnce(permanent);
-    await act(async () => { await expect(result.current.start(new File(["a"], "video.mp4", { type: "video/mp4" }), metadata as never)).rejects.toThrow("bad"); });
-    expect(clients.startUpload).toHaveBeenCalledTimes(2);
+  });
+
+  it("no reintenta un ApiError 4xx", async () => {
+    const permanent = new ApiError(400, { code: "VALIDATION_ERROR", message: "bad", details: null, traceId: "x" });
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockRejectedValue(permanent),
+      uploadChunk: vi.fn(), getUpload: vi.fn(), completeUpload: vi.fn(),
+      getProcessing: vi.fn(), cancelUpload: vi.fn(), deleteVideo: vi.fn(),
+    };
+    const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
+    await act(async () => {
+      await expect(result.current.start(new File(["a"], "video.mp4", { type: "video/mp4" }), metadata as never)).rejects.toThrow("bad");
+    });
+    expect(clients.startUpload).toHaveBeenCalledTimes(1);
+    expect(clients.uploadChunk).not.toHaveBeenCalled();
   });
 
   it("reintenta un error de red TypeError y publica", async () => {
@@ -102,6 +123,110 @@ describe("useVideoUpload", () => {
     await act(async () => { await result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never); });
     expect(clients.uploadChunk).toHaveBeenCalledTimes(2);
     expect(result.current.state.phase).toBe("published");
+  });
+
+  it("no vuelve a leer los fragmentos del archivo durante un retry", async () => {
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(undefined),
+      getUpload: vi.fn(), completeUpload: vi.fn().mockResolvedValue(status),
+      getProcessing: vi.fn().mockResolvedValue({ status: "ready" }), cancelUpload: vi.fn(), deleteVideo: vi.fn(),
+    };
+    const file = new File(["abc"], "video.mp4", { type: "video/mp4" });
+    const slice = vi.spyOn(file, "slice");
+    const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
+
+    await act(async () => { await result.current.start(file, metadata as never); });
+
+    expect(clients.uploadChunk).toHaveBeenCalledTimes(2);
+    expect(slice).toHaveBeenCalledTimes(2);
+  });
+
+  it("no reintenta un AbortError", async () => {
+    await withFakeTimers(async () => {
+      const canceled = new DOMException("Aborted", "AbortError");
+      const clients = {
+        createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+        uploadChunk: vi.fn().mockRejectedValue(canceled), getUpload: vi.fn(), completeUpload: vi.fn(),
+        getProcessing: vi.fn(), cancelUpload: vi.fn(), deleteVideo: vi.fn(),
+      };
+      const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
+      let running: Promise<{ value: void | undefined; error: unknown }> | undefined;
+      await act(async () => {
+        running = result.current.start(new File(["a"], "video.mp4", { type: "video/mp4" }), metadata as never)
+          .then((value) => ({ value, error: undefined as unknown }))
+          .catch((error: unknown) => ({ value: undefined, error }));
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.runAllTimersAsync();
+        await running;
+      });
+      if (!running) throw new Error("La subida no inició.");
+      expect((await running).error).toBeInstanceOf(DOMException);
+      expect(((await running).error as DOMException).name).toBe("AbortError");
+      expect(clients.uploadChunk).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("no reintenta un Error genérico", async () => {
+    await withFakeTimers(async () => {
+      const failure = new Error("unexpected");
+      const clients = {
+        createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+        uploadChunk: vi.fn().mockRejectedValue(failure), getUpload: vi.fn(), completeUpload: vi.fn(),
+        getProcessing: vi.fn(), cancelUpload: vi.fn(), deleteVideo: vi.fn(),
+      };
+      const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
+      let running: Promise<{ value: void | undefined; error: unknown }> | undefined;
+      await act(async () => {
+        running = result.current.start(new File(["a"], "video.mp4", { type: "video/mp4" }), metadata as never)
+          .then((value) => ({ value, error: undefined as unknown }))
+          .catch((error: unknown) => ({ value: undefined, error }));
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.runAllTimersAsync();
+        await running;
+      });
+      if (!running) throw new Error("La subida no inició.");
+      expect((await running).error).toBe(failure);
+      expect(clients.uploadChunk).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("aumenta el backoff de 250 ms a 500 ms entre retries", async () => {
+    await withFakeTimers(async () => {
+      vi.spyOn(Math, "random").mockReturnValue(0.5);
+      const clients = {
+        createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+        uploadChunk: vi.fn().mockRejectedValueOnce(new ApiError(503, { code: "SERVICE_UNAVAILABLE", message: "down", details: null, traceId: "x" }))
+          .mockRejectedValueOnce(new ApiError(503, { code: "SERVICE_UNAVAILABLE", message: "down", details: null, traceId: "x" }))
+          .mockResolvedValue(undefined),
+        getUpload: vi.fn(), completeUpload: vi.fn().mockResolvedValue(status),
+        getProcessing: vi.fn().mockResolvedValue({ status: "ready" }), cancelUpload: vi.fn(), deleteVideo: vi.fn(),
+      };
+      const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
+      const file = new File(["a"], "video.mp4", { type: "video/mp4" });
+      const flushMicrotasks = async (): Promise<void> => {
+        for (let index = 0; index < 20; index += 1) await Promise.resolve();
+      };
+      let running: Promise<void> | undefined;
+
+      await act(async () => {
+        running = result.current.start(file, metadata as never);
+        await vi.advanceTimersByTimeAsync(0);
+        await flushMicrotasks();
+      });
+      expect(clients.uploadChunk).toHaveBeenCalledTimes(1);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(374); });
+      expect(clients.uploadChunk).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); await flushMicrotasks(); });
+      expect(clients.uploadChunk).toHaveBeenCalledTimes(2);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(624); });
+      expect(clients.uploadChunk).toHaveBeenCalledTimes(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); await running; });
+      expect(clients.uploadChunk).toHaveBeenCalledTimes(3);
+      expect(result.current.state.phase).toBe("published");
+    });
   });
 
   it.each([403, 413])("reconoce QUOTA_EXCEEDED por código con HTTP %i", async (httpStatus) => {
@@ -311,22 +436,29 @@ describe("useVideoUpload", () => {
   });
 
   it("interrumpe la espera de retry al cancelar", async () => {
-    const transient = new ApiError(503, { code: "SERVICE_UNAVAILABLE", message: "down", details: null, traceId: "x" });
-    const clients = {
-      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
-      uploadChunk: vi.fn().mockRejectedValue(transient), getUpload: vi.fn(), completeUpload: vi.fn(),
-      getProcessing: vi.fn(), cancelUpload: vi.fn().mockResolvedValue(undefined), deleteVideo: vi.fn().mockResolvedValue(undefined),
-    };
-    const { result } = renderHook(() => useVideoUpload(clients), { wrapper });
-    let running: Promise<void> | undefined;
-    await act(async () => {
-      running = result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never);
-      await Promise.resolve();
-      await Promise.resolve();
+    await withFakeTimers(async () => {
+      vi.spyOn(Math, "random").mockReturnValue(0);
+      const transient = new ApiError(503, { code: "SERVICE_UNAVAILABLE", message: "down", details: null, traceId: "x" });
+      const clients = {
+        createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+        uploadChunk: vi.fn().mockRejectedValue(transient), getUpload: vi.fn(), completeUpload: vi.fn(),
+        getProcessing: vi.fn(), cancelUpload: vi.fn().mockResolvedValue(undefined), deleteVideo: vi.fn().mockResolvedValue(undefined),
+      };
+      const { result } = renderHook(() => useVideoUpload(clients), { wrapper });
+      let running: Promise<void> | undefined;
+      const flushMicrotasks = async (): Promise<void> => {
+        for (let index = 0; index < 20; index += 1) await Promise.resolve();
+      };
+      await act(async () => {
+        running = result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never);
+        await vi.advanceTimersByTimeAsync(0);
+        await flushMicrotasks();
+      });
+      expect(clients.uploadChunk).toHaveBeenCalledTimes(1);
+      await act(async () => { await result.current.cancel(); await running; });
+      expect(clients.uploadChunk).toHaveBeenCalledTimes(1);
+      expect(result.current.state.phase).toBe("canceled");
     });
-    await act(async () => { await result.current.cancel(); await running; });
-    expect(clients.uploadChunk).toHaveBeenCalledTimes(1);
-    expect(result.current.state.phase).toBe("canceled");
   });
 
   it("informa si no puede limpiar el registro huérfano", async () => {

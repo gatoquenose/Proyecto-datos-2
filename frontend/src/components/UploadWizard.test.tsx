@@ -79,6 +79,7 @@ describe("UploadWizard", () => {
     const file = new File(["contenido"], "clase.mp4", { type: "video/mp4" });
     fireEvent.change(screen.getByLabelText("Archivo de video"), { target: { files: [file] } });
     expect(screen.getByRole("alert")).toHaveTextContent("reserva espacio adicional");
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/\d/);
     expect(screen.queryByText(/Espacio restante:/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Subir video" })).toBeDisabled();
   });
