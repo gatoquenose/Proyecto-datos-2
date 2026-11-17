@@ -600,8 +600,8 @@ describe("useVideoUpload", () => {
     expect(result.current.state.phase).toBe("failed");
   });
 
-  it.each([401, 403, 404])("detiene el sondeo ante HTTP %i", async (httpStatus) => {
-    const error = new ApiError(httpStatus, { code: "NOT_FOUND", message: "No disponible", details: null, traceId: "x" });
+  it("detiene el sondeo ante 401", async () => {
+    const error = new ApiError(401, { code: "TOKEN_EXPIRED", message: "Sesión expirada", details: null, traceId: "x" });
     const clients = {
       createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
       uploadChunk: vi.fn().mockResolvedValue(undefined), getUpload: vi.fn(), completeUpload: vi.fn().mockResolvedValue(status),
@@ -611,12 +611,88 @@ describe("useVideoUpload", () => {
 
     await act(async () => {
       await expect(result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never))
+        .rejects.toThrow("Sesión expirada");
+    });
+
+    expect(clients.getProcessing).toHaveBeenCalledTimes(1);
+    expect(clients.cancelUpload).not.toHaveBeenCalled();
+    expect(clients.deleteVideo).not.toHaveBeenCalled();
+  });
+
+  it("detiene el sondeo ante 403", async () => {
+    const error = new ApiError(403, { code: "FORBIDDEN", message: "No disponible", details: null, traceId: "x" });
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockResolvedValue(undefined), getUpload: vi.fn(), completeUpload: vi.fn().mockResolvedValue(status),
+      getProcessing: vi.fn().mockRejectedValue(error), cancelUpload: vi.fn(), deleteVideo: vi.fn(),
+    };
+    const { result } = renderHook(() => useVideoUpload(clients), { wrapper });
+
+    await act(async () => {
+      await expect(result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never))
         .rejects.toThrow("No disponible");
     });
 
     expect(clients.getProcessing).toHaveBeenCalledTimes(1);
     expect(clients.cancelUpload).not.toHaveBeenCalled();
     expect(clients.deleteVideo).not.toHaveBeenCalled();
+  });
+
+  it("detiene el sondeo ante 404", async () => {
+    const error = new ApiError(404, { code: "NOT_FOUND", message: "No disponible", details: null, traceId: "x" });
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockResolvedValue(undefined), getUpload: vi.fn(), completeUpload: vi.fn().mockResolvedValue(status),
+      getProcessing: vi.fn().mockRejectedValue(error), cancelUpload: vi.fn(), deleteVideo: vi.fn(),
+    };
+    const { result } = renderHook(() => useVideoUpload(clients), { wrapper });
+
+    await act(async () => {
+      await expect(result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never))
+        .rejects.toThrow("No disponible");
+    });
+
+    expect(clients.getProcessing).toHaveBeenCalledTimes(1);
+    expect(clients.cancelUpload).not.toHaveBeenCalled();
+    expect(clients.deleteVideo).not.toHaveBeenCalled();
+  });
+
+  it("no permite cancelar tras completeUpload exitoso", async () => {
+    let releaseProcessing: ((status: { status: "processing" }) => void) | undefined;
+    let notifyProcessingStarted: (() => void) | undefined;
+    const processingStarted = new Promise<void>((resolve) => { notifyProcessingStarted = resolve; });
+    const processingResponse = new Promise<{ status: "processing" }>((resolve) => { releaseProcessing = resolve; });
+    const clients = {
+      createVideo: vi.fn().mockResolvedValue(video), startUpload: vi.fn().mockResolvedValue(start),
+      uploadChunk: vi.fn().mockResolvedValue(undefined), getUpload: vi.fn(), completeUpload: vi.fn().mockResolvedValue(status),
+      getProcessing: vi.fn()
+        .mockImplementationOnce(() => {
+          notifyProcessingStarted?.();
+          return processingResponse;
+        })
+        .mockResolvedValueOnce({ status: "ready" }),
+      cancelUpload: vi.fn().mockResolvedValue(undefined), deleteVideo: vi.fn().mockResolvedValue(undefined),
+    };
+    const { result } = renderHook(() => useVideoUpload(clients, 0), { wrapper });
+    let running: Promise<void> | undefined;
+
+    await act(async () => {
+      running = result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never);
+      await processingStarted;
+    });
+    expect(clients.completeUpload).toHaveBeenCalledTimes(1);
+    expect(result.current.state.phase).toBe("processing");
+
+    await act(async () => { await result.current.cancel(); });
+    expect(clients.cancelUpload).not.toHaveBeenCalled();
+    expect(clients.deleteVideo).not.toHaveBeenCalled();
+    expect(result.current.state.phase).toBe("processing");
+
+    await act(async () => {
+      releaseProcessing?.({ status: "processing" });
+      await running;
+    });
+    expect(result.current.state.phase).toBe("published");
   });
 
   it("interrumpe la espera de retry al cancelar", async () => {
