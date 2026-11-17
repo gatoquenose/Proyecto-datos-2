@@ -34,3 +34,10 @@ endfunction()
 add_tecflix_service(users-api)
 add_tecflix_service(metadata-api)
 add_tecflix_service(streaming-api)
+find_package(bsoncxx CONFIG REQUIRED)
+find_package(mongocxx CONFIG REQUIRED)
+
+target_link_libraries(metadata-api PRIVATE
+    mongo::bsoncxx_shared
+    mongo::mongocxx_shared
+)

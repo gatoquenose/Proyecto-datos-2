@@ -2,9 +2,7 @@
   "name": "tecflix",
   "version-string": "0.1.0",
   "dependencies": [
-    {
-      "name": "boost-beast",
-      "features": ["ssl"]
-    }
+    "boost-beast",
+    "mongo-cxx-driver"
   ]
 }

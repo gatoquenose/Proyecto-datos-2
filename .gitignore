@@ -21,3 +21,4 @@ compile_commands.json
 /data/*.idx
 /storage/*
 !/storage/.gitkeep
+/build-v143/
