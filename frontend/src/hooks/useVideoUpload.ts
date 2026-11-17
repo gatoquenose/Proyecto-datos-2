@@ -108,6 +108,7 @@ export function useVideoUpload(clients: UploadClients, pollInterval = DEFAULT_UP
 
   const cancel = useCallback(async (): Promise<void> => {
     controllerRef.current?.abort();
+    completeRetryRef.current = null; // El checksum retenido no debe sobrevivir al descarte.
     const videoId = state.videoId;
     const uploadId = state.uploadId;
     if (state.phase === "processing" || state.phase === "published") return;
@@ -201,10 +202,15 @@ export function useVideoUpload(clients: UploadClients, pollInterval = DEFAULT_UP
   useEffect(() => () => { controllerRef.current?.abort(); }, []);
   const retryFailed = useCallback(async (file: File, metadata: CreateVideoRequest): Promise<void> => {
     if (state.phase !== "failed" || !state.uploadId || !state.videoId) return;
+    if (activeRef.current) return;
     const completeRetry = completeRetryRef.current;
     if (completeRetry) {
+      activeRef.current = true;
       dispatch({ type: "phase", phase: "completing" });
       const controller = new AbortController();
+      controllerRef.current = controller;
+      const unload = (event: BeforeUnloadEvent): void => { event.preventDefault(); event.returnValue = ""; };
+      window.addEventListener("beforeunload", unload);
       try {
         await retry(
           () => clients.completeUpload(completeRetry.uploadId, { fileChecksum: completeRetry.fileChecksum }),
@@ -212,14 +218,19 @@ export function useVideoUpload(clients: UploadClients, pollInterval = DEFAULT_UP
         );
         completeRetryRef.current = null;
         sessionStorage.removeItem(UPLOAD_SESSION_KEY);
+        if (controller.signal.aborted) return;
         dispatch({ type: "phase", phase: "processing" });
         let processing = await retry(() => clients.getProcessing(completeRetry.videoId), controller.signal);
+        if (controller.signal.aborted) return;
         while (processing.status === "processing") {
           await delay(pollInterval, controller.signal);
+          if (controller.signal.aborted) return;
           processing = await retry(() => clients.getProcessing(completeRetry.videoId), controller.signal);
+          if (controller.signal.aborted) return;
         }
-        finish(processing.status === "ready" ? "published" : "failed", completeRetry.videoId);
+        if (!controller.signal.aborted) finish(processing.status === "ready" ? "published" : "failed", completeRetry.videoId);
       } catch (error) {
+        if (controller.signal.aborted) return;
         if (!isUnauthorized(error)) {
           const message = error instanceof Error ? error.message : "No se pudo completar la subida.";
           dispatch({ type: "error", message });
@@ -228,10 +239,19 @@ export function useVideoUpload(clients: UploadClients, pollInterval = DEFAULT_UP
           void queryClient.invalidateQueries({ queryKey: ["video", completeRetry.videoId] });
         }
         throw error;
+      } finally {
+        window.removeEventListener("beforeunload", unload);
+        if (controllerRef.current === controller) controllerRef.current = null;
+        activeRef.current = false;
       }
       return;
     }
-    await clients.cancelUpload(state.uploadId);
+    activeRef.current = true;
+    try {
+      await clients.cancelUpload(state.uploadId);
+    } finally {
+      activeRef.current = false;
+    }
     await run(file, metadata, undefined, state.videoId);
   }, [clients, finish, pollInterval, queryClient, run, state.phase, state.uploadId, state.videoId]);
   const discardFailed = useCallback(async (): Promise<void> => {

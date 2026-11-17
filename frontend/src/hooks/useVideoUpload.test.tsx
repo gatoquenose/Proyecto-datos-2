@@ -27,6 +27,31 @@ const withFakeTimers = async (run: () => Promise<void>): Promise<void> => {
   }
 };
 
+const createFailedCompleteRetry = async (pollInterval = 0) => {
+  const invalid = new ApiError(400, { code: "VALIDATION_ERROR", message: "Checksum inválido", details: null, traceId: "x" });
+  const clients = {
+    createVideo: vi.fn().mockResolvedValue(video),
+    startUpload: vi.fn().mockResolvedValue(start),
+    uploadChunk: vi.fn().mockResolvedValue(undefined),
+    getUpload: vi.fn(),
+    completeUpload: vi.fn().mockRejectedValueOnce(invalid),
+    getProcessing: vi.fn(),
+    cancelUpload: vi.fn().mockResolvedValue(undefined),
+    deleteVideo: vi.fn().mockResolvedValue(undefined),
+  };
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+  const localWrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  const hook = renderHook(() => useVideoUpload(clients, pollInterval), { wrapper: localWrapper });
+  const file = new File(["abc"], "video.mp4", { type: "video/mp4" });
+
+  await act(async () => {
+    await expect(hook.result.current.start(file, metadata as never)).rejects.toThrow("Checksum inválido");
+  });
+
+  return { ...hook, clients, file, invalidateQueries };
+};
+
 describe("useVideoUpload", () => {
   it.each(["", "no-numérico", "0", "-1", "1.5", "Infinity"])(
     "usa el tamaño de fragmento por defecto con VITE_UPLOAD_CHUNK_SIZE=%s",
@@ -531,7 +556,6 @@ describe("useVideoUpload", () => {
     });
     expect(clients.getProcessing).toHaveBeenCalledTimes(1);
     expect(result.current.state.phase).toBe("processing");
-    await act(async () => { await result.current.cancel(); });
     expect(clients.cancelUpload).not.toHaveBeenCalled();
     await act(async () => {
       releaseProcessing?.({ status: "processing" });
@@ -546,6 +570,124 @@ describe("useVideoUpload", () => {
     expect(clients.getProcessing).toHaveBeenCalledTimes(2);
     expect(sessionStorage.getItem(UPLOAD_SESSION_KEY)).toBeNull();
     expect(result.current.state.phase).toBe("published");
+  });
+
+  it("aborta el sondeo del reintento al desmontar el hook sin finalizar estado", async () => {
+    const { result, unmount, clients, file, invalidateQueries } = await createFailedCompleteRetry(25);
+    invalidateQueries.mockClear();
+    let notifyPollStarted: (() => void) | undefined;
+    const pollStarted = new Promise<void>((resolve) => { notifyPollStarted = resolve; });
+    clients.getProcessing
+      .mockImplementationOnce(() => {
+        notifyPollStarted?.();
+        return Promise.resolve({ status: "processing" });
+      })
+      .mockResolvedValueOnce({ status: "ready" });
+    let retrying: Promise<void> | undefined;
+
+    await withFakeTimers(async () => {
+      await act(async () => {
+        retrying = result.current.retryFailed(file, metadata as never).catch(() => undefined);
+        await pollStarted;
+      });
+      unmount();
+      await act(async () => { await vi.advanceTimersByTimeAsync(25); });
+      await retrying;
+    });
+
+    expect(clients.getProcessing).toHaveBeenCalledTimes(1);
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it("cancel() aborta el sondeo activo del reintento", async () => {
+    const { result, clients, file, invalidateQueries } = await createFailedCompleteRetry(25);
+    invalidateQueries.mockClear();
+    let notifyPollStarted: (() => void) | undefined;
+    const pollStarted = new Promise<void>((resolve) => { notifyPollStarted = resolve; });
+    clients.getProcessing
+      .mockImplementationOnce(() => {
+        notifyPollStarted?.();
+        return Promise.resolve({ status: "processing" });
+      })
+      .mockResolvedValueOnce({ status: "ready" });
+    let retrying: Promise<void> | undefined;
+
+    await withFakeTimers(async () => {
+      await act(async () => {
+        retrying = result.current.retryFailed(file, metadata as never).catch(() => undefined);
+        await pollStarted;
+      });
+      await act(async () => { await result.current.cancel(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(25); });
+      await retrying;
+    });
+
+    expect(clients.getProcessing).toHaveBeenCalledTimes(1);
+    expect(clients.cancelUpload).not.toHaveBeenCalled();
+    expect(clients.deleteVideo).not.toHaveBeenCalled();
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it("no inicia un segundo completeUpload si ya hay un reintento activo", async () => {
+    const { result, clients, file } = await createFailedCompleteRetry();
+    let releaseComplete: ((value: typeof status) => void) | undefined;
+    let notifyCompleteStarted: (() => void) | undefined;
+    const completeStarted = new Promise<void>((resolve) => { notifyCompleteStarted = resolve; });
+    const completeResponse = new Promise<typeof status>((resolve) => { releaseComplete = resolve; });
+    clients.completeUpload.mockClear();
+    clients.completeUpload.mockImplementation(() => {
+      notifyCompleteStarted?.();
+      return completeResponse;
+    });
+    clients.getProcessing.mockResolvedValue({ status: "ready" });
+    let firstRetry: Promise<void> | undefined;
+    let secondRetry: Promise<void> | undefined;
+
+    await act(async () => {
+      firstRetry = result.current.retryFailed(file, metadata as never);
+      await completeStarted;
+      secondRetry = result.current.retryFailed(file, metadata as never);
+    });
+    releaseComplete?.(status);
+    await act(async () => { await Promise.allSettled([firstRetry, secondRetry]); });
+
+    expect(clients.completeUpload).toHaveBeenCalledTimes(1);
+    await expect(secondRetry).resolves.toBeUndefined();
+  });
+
+  it("registra y retira beforeunload durante el reintento exitoso", async () => {
+    const { result, clients, file } = await createFailedCompleteRetry();
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    add.mockClear();
+    remove.mockClear();
+    clients.completeUpload.mockResolvedValue(status);
+    clients.getProcessing.mockResolvedValue({ status: "ready" });
+
+    await act(async () => { await result.current.retryFailed(file, metadata as never); });
+
+    const unloadHandler = add.mock.calls.find(([event]) => event === "beforeunload")?.[1];
+    expect(unloadHandler).toBeDefined();
+    expect(remove).toHaveBeenCalledWith("beforeunload", unloadHandler);
+  });
+
+  it("registra y retira beforeunload si completeUpload vuelve a fallar", async () => {
+    const { result, clients, file } = await createFailedCompleteRetry();
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    add.mockClear();
+    remove.mockClear();
+    clients.completeUpload.mockRejectedValue(new ApiError(400, {
+      code: "VALIDATION_ERROR", message: "Checksum inválido", details: null, traceId: "x",
+    }));
+
+    await act(async () => {
+      await expect(result.current.retryFailed(file, metadata as never)).rejects.toThrow("Checksum inválido");
+    });
+
+    const unloadHandler = add.mock.calls.find(([event]) => event === "beforeunload")?.[1];
+    expect(unloadHandler).toBeDefined();
+    expect(remove).toHaveBeenCalledWith("beforeunload", unloadHandler);
   });
 
   it("ofrece descartar tras checksum inválido e invalida cuota", async () => {
