@@ -22,9 +22,12 @@ const shaka = vi.hoisted(() => {
     selectVariantTrack: ReturnType<typeof vi.fn>;
     addEventListener: ReturnType<typeof vi.fn>;
     filter?: (type: number, request: { headers: Record<string, string> }) => void;
+    getNetworkingEngine: () => {
+      registerRequestFilter: (filter: (type: number, request: { headers: Record<string, string> }) => void) => void;
+    };
   }> = [];
   const Player = vi.fn(() => {
-    const player = {
+    const player: (typeof players)[number] = {
       configure: vi.fn(),
       destroy: vi.fn().mockResolvedValue(undefined),
       load: vi.fn().mockResolvedValue(undefined),
@@ -40,6 +43,17 @@ const shaka = vi.hoisted(() => {
 });
 
 vi.mock("shaka-player", () => shaka);
+
+type ShakaErrorDetail = {
+  category: number;
+  code: number;
+  data: (string | number)[];
+};
+
+const makeShakaErrorEvent = (resource: string, status: number): CustomEvent<ShakaErrorDetail> =>
+  new CustomEvent<ShakaErrorDetail>("error", {
+    detail: { category: 1, code: 1001, data: [resource, status] },
+  });
 
 beforeEach(() => {
   shaka.players.length = 0;
@@ -57,7 +71,7 @@ describe("DashPlayer", () => {
   it("agrega Authorization al manifiesto y segmentos sin enviar Bearer null", async () => {
     const { unmount } = render(<DashPlayer manifestUrl="/manifest.mpd" />);
     await waitFor(() => expect(shaka.players).toHaveLength(1));
-    const request = { headers: {} };
+    const request: { headers: Record<string, string> } = { headers: {} };
     shaka.players[0].filter?.(0, request);
     expect(request.headers.Authorization).toBe("Bearer test-token");
     authStore.clear();
@@ -83,7 +97,7 @@ describe("DashPlayer", () => {
     render(<DashPlayer manifestUrl="/manifest.mpd" />);
     await waitFor(() => expect(shaka.players).toHaveLength(1));
     const listener = shaka.players[0].addEventListener.mock.calls.find(([name]) => name === "error")?.[1] as (event: Event) => void;
-    act(() => listener({ detail: { category: 1, code: 1001, data: ["manifest", 401] } } as Event));
+    act(() => listener(makeShakaErrorEvent("manifest", 401)));
     expect(unauthorized).toHaveBeenCalledWith(window.location.pathname + window.location.search);
     expect(screen.getByRole("alert")).toHaveTextContent("Tu sesión expiró");
   });
@@ -93,7 +107,7 @@ describe("DashPlayer", () => {
     await waitFor(() => expect(shaka.players).toHaveLength(1));
     expect(shaka.players[0].configure).toHaveBeenCalledWith({ streaming: { retryParameters: { maxAttempts: 1 } } });
     const listener = shaka.players[0].addEventListener.mock.calls.find(([name]) => name === "error")?.[1] as (event: Event) => void;
-    act(() => listener({ detail: { category: 1, code: 1001, data: ["segment", status] } } as Event));
+    act(() => listener(makeShakaErrorEvent("segment", status)));
     expect(screen.getByRole("alert")).toHaveTextContent(message);
   });
 });
