@@ -24,3 +24,5 @@ compile_commands.json
 
 build/
 vcpkg_installed/
+
+data/

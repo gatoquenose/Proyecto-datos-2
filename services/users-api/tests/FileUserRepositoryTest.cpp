@@ -139,6 +139,25 @@ TEST_F(FileUserRepositoryTest, UsernameAndQuotaCannotBeChanged) {
     EXPECT_EQ(repository_.findById("id-1")->quotaBytes, kQuota);
 }
 
+TEST_F(FileUserRepositoryTest, ModifyAppliesTheChangeToTheStoredUser) {
+    repository_.add(makeUser(1));
+
+    const auto result = repository_.modify("id-1", [](User& user) { user.usedBytes += 100; });
+    static_cast<void>(repository_.modify("id-1", [](User& user) { user.usedBytes += 100; }));
+
+    EXPECT_EQ(result, UpdateResult::Updated);
+    EXPECT_EQ(repository_.findById("id-1")->usedBytes, 200U);
+}
+
+TEST_F(FileUserRepositoryTest, ModifyRejectsChangesToImmutableFields) {
+    repository_.add(makeUser(1));
+
+    EXPECT_EQ(repository_.modify("id-1", [](User& user) { user.username = "otro"; }),
+              UpdateResult::ImmutableFieldChanged);
+    EXPECT_EQ(repository_.modify("id-1", [](User& user) { user.id = "id-2"; }), UpdateResult::ImmutableFieldChanged);
+    EXPECT_EQ(repository_.modify("id-9", [](User&) {}), UpdateResult::NotFound);
+}
+
 TEST_F(FileUserRepositoryTest, UpdateOfUnknownUserReportsNotFound) {
     EXPECT_EQ(repository_.update(makeUser(9)), UpdateResult::NotFound);
 }

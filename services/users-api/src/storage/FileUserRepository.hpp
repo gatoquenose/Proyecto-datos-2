@@ -20,6 +20,7 @@ public:
 
     AddResult add(const User& user) override;
     UpdateResult update(const User& user) override;
+    UpdateResult modify(std::string_view id, const std::function<void(User&)>& change) override;
     bool remove(std::string_view id) override;
 
     [[nodiscard]] std::optional<User> findById(std::string_view id) const override;

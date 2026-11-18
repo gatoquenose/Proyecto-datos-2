@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string_view>
 
@@ -24,8 +25,12 @@ public:
     // Lanza std::invalid_argument si algún campo está vacío o supera su límite.
     virtual AddResult add(const User& user) = 0;
 
-    // Identifica al usuario por user.id. Rechaza cambios de username o quotaBytes.
+    // Identifica al usuario por user.id. Rechaza cambios de id, username o quotaBytes.
     virtual UpdateResult update(const User& user) = 0;
+
+    // Lee al usuario, aplica 'change' y lo guarda, todo como una sola operación: evita que dos
+    // peticiones simultáneas pisen los cambios de la otra. Mismas reglas que update.
+    virtual UpdateResult modify(std::string_view id, const std::function<void(User&)>& change) = 0;
 
     // Borrado lógico. Devuelve false si el usuario no existe.
     virtual bool remove(std::string_view id) = 0;

@@ -97,24 +97,32 @@ AddResult FileUserRepository::add(const User& user) {
 }
 
 UpdateResult FileUserRepository::update(const User& user) {
-    validate(user);
-    const auto offset = index_.find(idKey(user.id));
+    return modify(user.id, [&user](User& current) { current = user; });
+}
+
+UpdateResult FileUserRepository::modify(std::string_view id, const std::function<void(User&)>& change) {
+    const auto offset = index_.find(idKey(id));
     if (!offset) {
         return UpdateResult::NotFound;
     }
     const User current = file_.read(*offset);
-    if (current.username != user.username || current.quotaBytes != user.quotaBytes) {
+    User updated = current;
+    change(updated);
+    validate(updated);
+    const bool immutableChanged = updated.id != current.id || updated.username != current.username ||
+                                  updated.quotaBytes != current.quotaBytes;
+    if (immutableChanged) {
         return UpdateResult::ImmutableFieldChanged;
     }
 
     const std::string oldEmailKey = emailKey(current.email);
-    const std::string newEmailKey = emailKey(user.email);
+    const std::string newEmailKey = emailKey(updated.email);
     const bool emailKeyChanged = oldEmailKey != newEmailKey;
     if (emailKeyChanged && index_.find(newEmailKey)) {
         return UpdateResult::EmailTaken;
     }
 
-    file_.overwrite(*offset, user);
+    file_.overwrite(*offset, updated);
     if (emailKeyChanged) {
         index_.erase(oldEmailKey);
         index_.insert(newEmailKey, *offset);

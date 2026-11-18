@@ -9,36 +9,61 @@ namespace tecflix::users {
 
 using testing::FakeEnvironment;
 
-TEST(ConfigTest, UsesDefaultsWhenVariablesAreMissing) {
-    const FakeEnvironment environment;
+namespace {
 
-    const auto config = Config::fromEnvironment(environment);
+constexpr const char* kSecret = "un-secreto-de-prueba-con-mas-de-32-bytes!";
+
+FakeEnvironment environmentWith(std::map<std::string, std::string, std::less<>> extra = {}) {
+    extra["JWT_SECRET"] = kSecret;
+    return FakeEnvironment{std::move(extra)};
+}
+
+}  // namespace
+
+TEST(ConfigTest, UsesDefaultsWhenOptionalVariablesAreMissing) {
+    const auto config = Config::fromEnvironment(environmentWith());
 
     EXPECT_EQ(config.port, 8080);
     EXPECT_EQ(config.logLevel, "info");
+    EXPECT_EQ(config.jwtSecret, kSecret);
+    EXPECT_EQ(config.jwtLifetime, std::chrono::seconds{3600});
+    EXPECT_EQ(config.defaultQuotaBytes, 5368709120ULL);
+    EXPECT_EQ(config.dataDirectory, std::filesystem::path{"data"});
 }
 
-TEST(ConfigTest, ReadsPortAndLogLevelFromEnvironment) {
-    const FakeEnvironment environment{{{"USERS_API_PORT", "9090"}, {"TECFX_LOG_LEVEL", "debug"}}};
-
-    const auto config = Config::fromEnvironment(environment);
+TEST(ConfigTest, ReadsEveryVariableFromTheEnvironment) {
+    const auto config = Config::fromEnvironment(environmentWith({{"USERS_API_PORT", "9090"},
+                                                                 {"TECFX_LOG_LEVEL", "debug"},
+                                                                 {"JWT_EXPIRATION_SECONDS", "60"},
+                                                                 {"DEFAULT_QUOTA_BYTES", "1000"},
+                                                                 {"USERS_DATA_DIR", "otra-carpeta"}}));
 
     EXPECT_EQ(config.port, 9090);
     EXPECT_EQ(config.logLevel, "debug");
+    EXPECT_EQ(config.jwtLifetime, std::chrono::seconds{60});
+    EXPECT_EQ(config.defaultQuotaBytes, 1000U);
+    EXPECT_EQ(config.dataDirectory, std::filesystem::path{"otra-carpeta"});
+}
+
+TEST(ConfigTest, JwtSecretIsRequired) {
+    EXPECT_THROW(Config::fromEnvironment(FakeEnvironment{}), std::invalid_argument);
+    EXPECT_THROW(Config::fromEnvironment(FakeEnvironment{{{"JWT_SECRET", ""}}}), std::invalid_argument);
 }
 
 TEST(ConfigTest, RejectsPortThatIsNotANumber) {
-    const FakeEnvironment environment{{{"USERS_API_PORT", "abc"}}};
-
-    EXPECT_THROW(Config::fromEnvironment(environment), std::invalid_argument);
+    EXPECT_THROW(Config::fromEnvironment(environmentWith({{"USERS_API_PORT", "abc"}})), std::invalid_argument);
 }
 
 TEST(ConfigTest, RejectsPortOutOfRange) {
-    const FakeEnvironment zero{{{"USERS_API_PORT", "0"}}};
-    const FakeEnvironment tooBig{{{"USERS_API_PORT", "70000"}}};
+    EXPECT_THROW(Config::fromEnvironment(environmentWith({{"USERS_API_PORT", "0"}})), std::invalid_argument);
+    EXPECT_THROW(Config::fromEnvironment(environmentWith({{"USERS_API_PORT", "70000"}})), std::invalid_argument);
+}
 
-    EXPECT_THROW(Config::fromEnvironment(zero), std::invalid_argument);
-    EXPECT_THROW(Config::fromEnvironment(tooBig), std::invalid_argument);
+TEST(ConfigTest, RejectsInvalidLifetimeAndQuota) {
+    EXPECT_THROW(Config::fromEnvironment(environmentWith({{"JWT_EXPIRATION_SECONDS", "0"}})), std::invalid_argument);
+    EXPECT_THROW(Config::fromEnvironment(environmentWith({{"JWT_EXPIRATION_SECONDS", "-5"}})), std::invalid_argument);
+    EXPECT_THROW(Config::fromEnvironment(environmentWith({{"DEFAULT_QUOTA_BYTES", "0"}})), std::invalid_argument);
+    EXPECT_THROW(Config::fromEnvironment(environmentWith({{"DEFAULT_QUOTA_BYTES", "mucho"}})), std::invalid_argument);
 }
 
 }  // namespace tecflix::users
