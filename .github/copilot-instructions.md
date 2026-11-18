@@ -53,20 +53,8 @@ proyecto; si contradice un contrato de `docs/openapi/`, prevalece el YAML.
 
 ## Estado y siguiente paso
 
-F0 a F4 están hechos: SPEC y contratos validados, frontend base, autenticación
-y perfil, lista con búsqueda/orden/paginación/miniaturas, y reproducción DASH
-con fixture sintético, sondeo y acciones del dueño. El backend sigue pendiente
-desde el esqueleto de la fase A.
+F0 a F5 están hechos. F5 incluye SHA-256 incremental del archivo y por fragmento en hexadecimal minúsculo, concurrencia 1, reanudación con `sessionStorage`, reintentos solo por red y 5xx, cuota con `QUOTA_EXCEEDED` como fuente de verdad, limpieza de registros huérfanos, asistente y edición probados, y mocks de subida, segmentos DASH y edición. Un 400 de `completeUpload` conserva estado y reserva y permite reintentar o cancelar; solo el éxito lo deja fuera de cancelación. `VITE_MAX_UPLOAD_BYTES` existe porque los YAML no definen el máximo.
 
-El siguiente paso es F5, subida y gestión. Su plan aprobado exige checksum
-incremental con `sha256.create().update(...)` en una sola pasada leyendo
-`Blob.slice` en orden, SHA-256 por fragmento, concurrencia 1 en v1,
-reanudar con `sessionStorage`, reintentar solo red y 5xx, cuota con
-`QUOTA_EXCEEDED` como fuente de verdad, invalidar `["quota"]`, limpiar
-registros huérfanos con `deleteVideo`, variable `VITE_MAX_UPLOAD_BYTES`,
-asistente de dos pasos, polling de procesamiento, `beforeunload`, edición y
-mocks/pruebas correspondientes. F6 queda después de F5; el backend comienza
-después en el orden A, B, C, D, E, G y H. No iniciar F6 ni backend durante F5.
-La cuota solo se muestra en `/profile`; no agregar indicadores de cuota a la
-cabecera ni a otras pantallas. La caché `["quota"]` debe conservarse para el
-perfil y su invalidación.
+Al cierre de F5: 216 pruebas en 25 archivos y 14 avisos `act(...)` —VideoCard 2, ProtectedRoute 6 y ProfilePage 6.
+
+Siguiente: F6 mínimo — README del frontend, revisión de accesibilidad, unir las pruebas DashPlayer duplicadas, limpiar esos avisos y prueba manual completa con mocks. Evaluar los candidatos de F6 registrados en `SPEC.md`, incluida la miniatura mock inválida. Después comienza el backend en orden A, B, C, D, E, G y H. No iniciar F6 ni backend sin aprobación. La cuota solo se muestra en `/profile`; conservar la caché `["quota"]` y su invalidación.

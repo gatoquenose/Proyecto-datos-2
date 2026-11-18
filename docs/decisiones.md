@@ -95,6 +95,33 @@
   el procesamiento y vuelve no cancelable la subida; el frontend ofrece
   reintentar o descartar para no dejar una reserva o registro huérfano.
 
+## Decisiones del frontend en F5
+
+- La edición envía en el PATCH únicamente los campos modificados. Es un supuesto de implementación del frontend, no una regla del SPEC; el SPEC exige explícitamente enviar solo `email` únicamente para la edición del perfil.
+- El campo `uploadedAt` se convierte de hora local a UTC al preparar el PATCH.
+- El foco en el primer campo con error ya existía y está probado.
+- «Volver» es un enlace; no se presenta como botón «Cancelar».
+- Tras un 400 de `completeUpload`, el reintento repite `completeUpload` con el mismo `fileChecksum`, conservado en memoria. Tras recargar, el checksum se recalcula releyendo localmente el archivo completo.
+
+## Límites conocidos de F5
+
+- `getProcessing` y `completeUpload` no reciben ni propagan `AbortSignal`. Cancelar con una petición en vuelo no aborta ese fetch; `delay` tampoco comprueba una señal ya abortada. Antes de simplificar el sondeo, definir la política de cancelación y propagar la señal por los clientes.
+- `cancel()` aborta el controlador antes de comprobar la fase.
+- Sigue pendiente definir el comportamiento de cancelar durante un `completeUpload` en vuelo del reintento.
+- `run` lanza `Error` si ya hay otra subida activa; `retryFailed` retorna en silencio.
+- Una prueba de sondeo conserva una aserción vacía para `cancelUpload`.
+- `VideoEditPage` trata `!user` como «no dueño»; hoy `ProtectedRoute` impide alcanzar ese caso.
+- El bucle de sondeo de `run` y `retryFailed` está duplicado. El refactor se abandonó porque `getProcessing` y `completeUpload` no reciben la señal; las comprobaciones de aborto de `retryFailed` no son redundantes.
+- La prueba «no permite cancelar tras `completeUpload` exitoso» fija que `run` termina en `published`, porque ni el mock ni el cliente propagan la señal. No demuestra una política de cancelación.
+
+## Mocks (MSW)
+
+- Los segmentos DASH se resuelven con `import.meta.glob` y `?url`, y se sirven mediante `fetch(bypass(url))` en desarrollo. El fixture es sintético; los mocks sirven los mismos segmentos para cualquier video.
+- Las tres compilaciones de producción —con `VITE_USE_MOCKS=true`, con `false` y sin la variable— verificaron que `.m4s` y el handler no entran al build.
+- Los videos creados con mocks se pierden al recargar. Solo los videos recién creados por el mock reciben duración de 12 segundos al publicarse.
+- Deuda de fidelidad: la miniatura devuelve 8 bytes (PNG inválido); `authorized` compara con el mismo valor que `MOCK_TOKEN`; visibilidad y borrado devuelven 403 para IDs inexistentes; inicio de subida no valida dueño, estado ni subida activa; el manifiesto devuelve 200 para IDs inexistentes; `VideoDetailPage` se queda en «Procesando video…» si el sondeo recibe 404.
+- Otras mejoras conocidas: `DASH_SEGMENT_FILES` repite el nombre del archivo en su ruta; `throw new Error` al fallar la carga del asset produce un error de red genérico; `isDateTime` es un validador manual largo para un mock; se usa `Object.assign` para escribir `durationSeconds`, propiedad de solo lectura en el tipo generado.
+
 ## Frontend F1
 
 - `openapi-typescript` is a dev dependency and `gen:api` generates TypeScript
