@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { ProtectedRoute } from "./ProtectedRoute";
@@ -18,6 +18,7 @@ describe("ProtectedRoute", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
     authStore.clear();
   });
@@ -27,29 +28,55 @@ describe("ProtectedRoute", () => {
     expect(screen.getByText("login")).toBeInTheDocument();
   });
 
-  it("con sesión muestra el contenido protegido", () => {
+  it("con sesión muestra el contenido protegido", async () => {
     authStore.setSession("jwt", { id: "1", username: "ana.tec", email: "ana@test.com", quotaBytes: 100, usedBytes: 25 });
-    users.getCurrentUser.mockResolvedValueOnce({ id: "1", username: "ana.tec", email: "ana@test.com" });
+    const restoredUser = { id: "1", username: "ana.tec", email: "ana@test.com" };
+    let resolveCurrentUser!: (user: typeof restoredUser) => void;
+    const currentUserPromise = new Promise<typeof restoredUser>((resolve) => {
+      resolveCurrentUser = resolve;
+    });
+    users.getCurrentUser.mockReturnValueOnce(currentUserPromise);
     render(<MemoryRouter initialEntries={["/videos"]}><AuthProvider><Routes><Route element={<ProtectedRoute />}><Route path="/videos" element={<p>privado</p>} /></Route></Routes></AuthProvider></MemoryRouter>);
-    return waitFor(() => expect(screen.getByText("privado")).toBeInTheDocument());
+    await act(async () => {
+      resolveCurrentUser(restoredUser);
+      await currentUserPromise;
+    });
+    await waitFor(() => expect(screen.getByText("privado")).toBeInTheDocument());
   });
 
   it("restaura una sesión válida consultando GET /users/me", async () => {
     authStore.setSession("jwt", { id: "1", username: "ana.tec", email: "old@test.com", quotaBytes: 100, usedBytes: 25 });
-    users.getCurrentUser.mockResolvedValueOnce({ id: "1", username: "ana.tec", email: "restored@test.com" });
+    const restoredUser = { id: "1", username: "ana.tec", email: "restored@test.com" };
+    let resolveCurrentUser!: (user: typeof restoredUser) => void;
+    const currentUserPromise = new Promise<typeof restoredUser>((resolve) => {
+      resolveCurrentUser = resolve;
+    });
+    users.getCurrentUser.mockReturnValueOnce(currentUserPromise);
     function RestoredUser(): JSX.Element {
       const { user } = useAuth();
       return <p>{user?.email}</p>;
     }
     render(<MemoryRouter initialEntries={["/videos"]}><AuthProvider><Routes><Route element={<ProtectedRoute />}><Route path="/videos" element={<RestoredUser />} /></Route><Route path="/login" element={<p>login</p>} /></Routes></AuthProvider></MemoryRouter>);
+    await act(async () => {
+      resolveCurrentUser(restoredUser);
+      await currentUserPromise;
+    });
     await waitFor(() => expect(users.getCurrentUser).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByText("restored@test.com")).toBeInTheDocument());
   });
 
   it("limpia una sesión inválida y redirige a login al restaurarla", async () => {
     authStore.setSession("jwt", { id: "1", username: "ana.tec", email: "old@test.com", quotaBytes: 100, usedBytes: 25 });
-    users.getCurrentUser.mockRejectedValueOnce(new Error("expired"));
+    let rejectCurrentUser!: (error: Error) => void;
+    const currentUserPromise = new Promise<never>((_resolve, reject) => {
+      rejectCurrentUser = reject;
+    });
+    users.getCurrentUser.mockReturnValueOnce(currentUserPromise);
     render(<MemoryRouter initialEntries={["/videos"]}><AuthProvider><Routes><Route element={<ProtectedRoute />}><Route path="/videos" element={<p>privado</p>} /></Route><Route path="/login" element={<p>login</p>} /></Routes></AuthProvider></MemoryRouter>);
+    await act(async () => {
+      rejectCurrentUser(new Error("expired"));
+      await currentUserPromise.catch(() => undefined);
+    });
     await waitFor(() => expect(screen.getByText("login")).toBeInTheDocument());
     expect(authStore.getToken()).toBeNull();
   });
@@ -57,7 +84,12 @@ describe("ProtectedRoute", () => {
 
   it("avisa el 401, conserva la ruta y permite volver tras iniciar sesión", async () => {
     authStore.setSession("jwt", { id: "1", username: "ana.tec", email: "ana@test.com", quotaBytes: 100, usedBytes: 25 });
-    users.getCurrentUser.mockResolvedValueOnce({ id: "1", username: "ana.tec", email: "ana@test.com" });
+    const restoredUser = { id: "1", username: "ana.tec", email: "ana@test.com" };
+    let resolveCurrentUser!: (user: typeof restoredUser) => void;
+    const currentUserPromise = new Promise<typeof restoredUser>((resolve) => {
+      resolveCurrentUser = resolve;
+    });
+    users.getCurrentUser.mockReturnValueOnce(currentUserPromise);
     users.login.mockResolvedValueOnce({ accessToken: "new-jwt", user: { id: "1", username: "ana.tec", email: "ana@test.com" } });
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({ code: "AUTH_REQUIRED", message: "expired", details: null, traceId: "trace" }), { status: 401, headers: { "Content-Type": "application/json" } }));
     function ExpiringPage(): JSX.Element {
@@ -65,6 +97,10 @@ describe("ProtectedRoute", () => {
       return <><p>privado</p><p>{location.pathname}</p><button onClick={() => void request("/protected").catch(() => undefined)}>Actualizar</button></>;
     }
     render(<MemoryRouter initialEntries={["/videos"]}><AuthProvider><Routes><Route element={<ProtectedRoute />}><Route path="/videos" element={<ExpiringPage />} /></Route><Route path="/login" element={<LoginPage />} /></Routes></AuthProvider></MemoryRouter>);
+    await act(async () => {
+      resolveCurrentUser(restoredUser);
+      await currentUserPromise;
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Actualizar" }));
     await screen.findByRole("heading", { name: "Iniciar sesión" });
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Tu sesión expiró."));

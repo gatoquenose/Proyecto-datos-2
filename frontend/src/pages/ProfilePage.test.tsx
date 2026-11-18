@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,11 +21,12 @@ describe("ProfilePage", () => {
   });
 
   afterEach(() => {
+    cleanup();
     authStore.clear();
   });
 
   it("muestra cuota de solo lectura y username inmutable", async () => {
-    renderProfile();
+    await renderProfile();
     expect(await screen.findByText("0.10 GB / 5.00 GB")).toBeInTheDocument();
     expect(screen.getByText("4.90 GB disponibles")).toBeInTheDocument();
     expect(screen.getByText("El username es inmutable.")).toBeInTheDocument();
@@ -35,7 +37,7 @@ describe("ProfilePage", () => {
 
   it("edita el correo enviando solo email y muestra errores por campo", async () => {
     users.updateUser.mockRejectedValueOnce(new ApiError(409, { code: "EMAIL_EXISTS", message: "Correo existente.", details: null, traceId: "trace" }));
-    renderProfile();
+    await renderProfile();
     await screen.findByText("0.10 GB / 5.00 GB");
     const email = screen.getByLabelText("Correo");
     fireEvent.change(email, { target: { value: "new@test.com" } });
@@ -46,7 +48,7 @@ describe("ProfilePage", () => {
   });
 
   it.each(["Ana.Tec", "ana.tec "])("mantiene deshabilitada la eliminación para %j", async (value) => {
-    renderProfile();
+    await renderProfile();
     await screen.findByText("0.10 GB / 5.00 GB");
     fireEvent.click(screen.getByRole("button", { name: "Eliminar mi cuenta" }));
     const confirm = screen.getByRole("button", { name: "Eliminar cuenta" });
@@ -56,7 +58,7 @@ describe("ProfilePage", () => {
   });
 
   it("cierra con Escape y limpia el username al reabrir el diálogo", async () => {
-    renderProfile();
+    await renderProfile();
     await screen.findByText("0.10 GB / 5.00 GB");
     fireEvent.click(screen.getByRole("button", { name: "Eliminar mi cuenta" }));
     fireEvent.change(screen.getByLabelText("Confirmar username"), { target: { value: "ana.tec" } });
@@ -70,7 +72,7 @@ describe("ProfilePage", () => {
 
   it("elimina con éxito, limpia la sesión y navega al login", async () => {
     users.deleteUser.mockResolvedValueOnce(undefined);
-    renderProfile();
+    await renderProfile();
     await screen.findByText("0.10 GB / 5.00 GB");
     fireEvent.click(screen.getByRole("button", { name: "Eliminar mi cuenta" }));
     fireEvent.change(screen.getByLabelText("Confirmar username"), { target: { value: "ana.tec" } });
@@ -83,7 +85,7 @@ describe("ProfilePage", () => {
 
   it("muestra el error de eliminación y conserva la sesión", async () => {
     users.deleteUser.mockRejectedValueOnce(new ApiError(409, { code: "INVALID_STATE", message: "No se puede eliminar.", details: null, traceId: "delete-trace" }));
-    renderProfile();
+    await renderProfile();
     await screen.findByText("0.10 GB / 5.00 GB");
     fireEvent.click(screen.getByRole("button", { name: "Eliminar mi cuenta" }));
     fireEvent.change(screen.getByLabelText("Confirmar username"), { target: { value: "ana.tec" } });
@@ -93,8 +95,18 @@ describe("ProfilePage", () => {
     expect(screen.getByRole("heading", { name: "Mi perfil" })).toBeInTheDocument();
   });
 
-  function renderProfile(): void {
+  async function renderProfile(): Promise<void> {
     const client = new QueryClient();
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/profile"]}><AuthProvider><Routes><Route path="/profile" element={<ProfilePage />} /><Route path="/login" element={<p>login</p>} /></Routes></AuthProvider></MemoryRouter></QueryClientProvider>);
+    const restoredUser = { id: "1", username: "ana.tec", email: "ana@test.com" };
+    let resolveCurrentUser!: (user: typeof restoredUser) => void;
+    const currentUserPromise = new Promise<typeof restoredUser>((resolve) => {
+      resolveCurrentUser = resolve;
+    });
+    users.getCurrentUser.mockReset().mockReturnValue(currentUserPromise);
+    render(<StrictMode><QueryClientProvider client={client}><MemoryRouter initialEntries={["/profile"]}><AuthProvider><Routes><Route path="/profile" element={<ProfilePage />} /><Route path="/login" element={<p>login</p>} /></Routes></AuthProvider></MemoryRouter></QueryClientProvider></StrictMode>);
+    await act(async () => {
+      resolveCurrentUser(restoredUser);
+      await currentUserPromise;
+    });
   }
 });

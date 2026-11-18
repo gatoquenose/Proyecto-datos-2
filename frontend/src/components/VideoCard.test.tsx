@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { authStore } from "../auth/authStore";
@@ -51,14 +51,14 @@ describe("VideoCard", () => {
     render(<MemoryRouter><VideoCard video={video} showOwnerDetails={false} /></MemoryRouter>);
     expect(fetch).not.toHaveBeenCalled();
 
-    observerCallbacks[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    act(() => observerCallbacks[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
     await waitFor(() => expect(fetch).toHaveBeenCalled());
   });
 
   it("muestra marcador si la miniatura no está disponible", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
     render(<MemoryRouter><VideoCard video={video} showOwnerDetails={false} /></MemoryRouter>);
-    observerCallbacks[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    act(() => observerCallbacks[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
     expect(await screen.findByText("Miniatura no disponible")).toBeInTheDocument();
   });
 });
