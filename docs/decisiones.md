@@ -163,3 +163,10 @@ en JSX. `eslint-plugin-jsx-a11y` se añadió porque las pantallas y controles
 del frontend necesitan validación automatizada de labels, roles y atributos
 ARIA. Todas son dependencias de desarrollo y se configuraron sin flags de
 forzado.
+
+## Build del backend con Docker (fase A)
+
+- El backend se compila con Docker (Linux) como ruta canónica: los equipos no tienen MSVC y así los 4 integrantes comparten el mismo entorno.
+- vcpkg: `builtin-baseline` fijado a `0df93a05b9de080129e653ec4776d7e14a1b2e4f` (commit de microsoft/vcpkg) para builds reproducibles.
+- OpenTelemetry (A3) se aplaza a la fase G; en la fase A solo se implementan logs JSON, `/health` y `/ready`.
+- Los comandos docker del proyecto se ejecutan con `-p tecflix`, porque Docker de la máquina de desarrollo aloja otros contenedores.
