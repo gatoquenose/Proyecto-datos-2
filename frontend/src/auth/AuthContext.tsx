@@ -9,6 +9,7 @@ interface AuthContextValue {
   user: ReturnType<typeof authStore.getUser>;
   ready: boolean;
   sessionExpired: boolean;
+  sessionRestoreFailed: boolean;
   login: (token: string, user: NonNullable<ReturnType<typeof authStore.getUser>>) => void;
   clearSessionExpired: () => void;
   logout: () => void;
@@ -21,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
   const navigate = useNavigate();
   const [ready, setReady] = useState(!authStore.getToken());
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [sessionRestoreFailed, setSessionRestoreFailed] = useState(false);
   useEffect(() => {
     const restore = async (): Promise<void> => {
       if (!authStore.getToken()) {
@@ -31,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
         authStore.setUser(await usersClient.getCurrentUser());
       } catch {
         authStore.clear();
-        navigate("/login", { replace: true, state: { message: "Tu sesión ya no es válida." } });
+        setSessionRestoreFailed(true);
       } finally {
         setReady(true);
       }
@@ -53,14 +55,16 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       user: authStore.getUser(),
       ready,
       sessionExpired,
+      sessionRestoreFailed,
       login: (token: string, user: NonNullable<ReturnType<typeof authStore.getUser>>) => {
         authStore.setSession(token, user);
         setSessionExpired(false);
+        setSessionRestoreFailed(false);
       },
       clearSessionExpired: () => setSessionExpired(false),
-      logout: () => { authStore.clear(); setSessionExpired(false); navigate("/login"); },
+      logout: () => { authStore.clear(); setSessionExpired(false); setSessionRestoreFailed(false); navigate("/login"); },
     };
-  }, [ready, sessionExpired, snapshot, navigate]);
+  }, [ready, sessionExpired, sessionRestoreFailed, snapshot, navigate]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

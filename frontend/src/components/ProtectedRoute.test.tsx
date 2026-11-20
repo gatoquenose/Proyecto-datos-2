@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "../auth/AuthContext";
 import { authStore } from "../auth/authStore";
 import { request } from "../api/httpClient";
 import { LoginPage } from "../pages/LoginPage";
+import { ApiError } from "../types/api";
 
 const users = vi.hoisted(() => ({ getCurrentUser: vi.fn(), login: vi.fn() }));
 vi.mock("../api/usersClient", () => ({ usersClient: users }));
@@ -72,12 +73,14 @@ describe("ProtectedRoute", () => {
       rejectCurrentUser = reject;
     });
     users.getCurrentUser.mockReturnValueOnce(currentUserPromise);
-    render(<MemoryRouter initialEntries={["/videos"]}><AuthProvider><Routes><Route element={<ProtectedRoute />}><Route path="/videos" element={<p>privado</p>} /></Route><Route path="/login" element={<p>login</p>} /></Routes></AuthProvider></MemoryRouter>);
+    render(<MemoryRouter initialEntries={["/videos"]}><AuthProvider><Routes><Route element={<ProtectedRoute />}><Route path="/videos" element={<p>privado</p>} /></Route><Route path="/login" element={<LoginPage />} /></Routes></AuthProvider></MemoryRouter>);
     await act(async () => {
-      rejectCurrentUser(new Error("expired"));
+      rejectCurrentUser(new ApiError(401, { code: "TOKEN_EXPIRED", message: "Token expirado.", details: null, traceId: "test" }));
       await currentUserPromise.catch(() => undefined);
     });
-    await waitFor(() => expect(screen.getByText("login")).toBeInTheDocument());
+    expect(users.getCurrentUser).toHaveBeenCalledTimes(1);
+    await screen.findByRole("heading", { name: "Iniciar sesión" });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Tu sesión ya no es válida.");
     expect(authStore.getToken()).toBeNull();
   });
 
