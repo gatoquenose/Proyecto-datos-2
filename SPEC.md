@@ -103,7 +103,9 @@ Hecho: F0–F5. F5 incluye:
 
 Al cierre de F5: 216 pruebas en 25 archivos y 14 avisos `act(...)` —VideoCard 2, ProtectedRoute 6 y ProfilePage 6.
 
-Siguiente: F6 mínimo — README del frontend, revisión de accesibilidad, unir `DashPlayer.test.ts` y `DashPlayer.test.tsx`, limpiar los avisos `act(...)` existentes y prueba manual completa con mocks. Candidatos de F6: foco tras guardar o cancelar; descripción del asistente con fondo blanco en tema oscuro; mensaje de error de guardado duplicado en la edición; `returnTo` que no conserva la query; aclarar el texto «Tu sesión ya no es válida.» en el SPEC; y la miniatura mock, cuyo handler devuelve 8 bytes (PNG inválido). Decidir si se usa un PNG mínimo válido; no añadir archivos binarios al repositorio sin aprobación.
+F6 en curso: F6-1 unió las pruebas de DashPlayer (`1265b5f`); F6-2 limpió los avisos del arnés (`efc7d91`); F6-3 completó estilos oscuros (`0c31865`), alerta única al guardar (`3f55a1d`), mensaje probado de restauración de sesión inválida (`cbf3c4f`) y documentación del estado de mocks (`c3223b4`). Baseline actual: 217 pruebas en 24 archivos, 0 avisos `act(...)`, lint y build verdes.
+
+Pendientes de F6: F6-3a (foco tras guardar o volver, aplazado), F6-3d (`returnTo` con query y validación same-origin, aplazado), F6-4 (README del frontend), F6-5 (lista de comprobación de prueba manual con mocks) y F6-6 (miniatura mock PNG válida de 1x1, sin binarios sin aprobación).
 
 Después de F6, backend en el orden A, B, C, D, E, G y H (sección 8). La cuota se muestra únicamente en `/profile`; conservar la caché `["quota"]` y su invalidación. Dejar los cambios pendientes de contrato en la sección 13 antes de implementarlos.
 

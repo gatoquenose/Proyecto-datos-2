@@ -53,8 +53,35 @@ proyecto; si contradice un contrato de `docs/openapi/`, prevalece el YAML.
 
 ## Estado y siguiente paso
 
-F0 a F5 están hechos. F5 incluye SHA-256 incremental del archivo y por fragmento en hexadecimal minúsculo, concurrencia 1, reanudación con `sessionStorage`, reintentos solo por red y 5xx, cuota con `QUOTA_EXCEEDED` como fuente de verdad, limpieza de registros huérfanos, asistente y edición probados, y mocks de subida, segmentos DASH y edición. Un 400 de `completeUpload` conserva estado y reserva y permite reintentar o cancelar; solo el éxito lo deja fuera de cancelación. `VITE_MAX_UPLOAD_BYTES` existe porque los YAML no definen el máximo.
+F0–F5 están hechos. F5 incluye SHA-256 incremental del archivo y de cada
+fragmento en hexadecimal minúsculo, concurrencia 1, reanudación con
+`sessionStorage`, reintentos solo por red y 5xx, cuota con `QUOTA_EXCEEDED`
+como fuente de verdad, limpieza de registros huérfanos, asistente y edición
+probados, y mocks de subida, DASH y edición. Un 400 de `completeUpload` conserva
+estado y reserva y permite reintentar o cancelar; solo el éxito lo deja fuera
+de cancelación. `VITE_MAX_UPLOAD_BYTES` existe porque los YAML no definen el
+máximo.
 
-Al cierre de F5: 216 pruebas en 25 archivos y 14 avisos `act(...)` —VideoCard 2, ProtectedRoute 6 y ProfilePage 6.
+F6 está parcial. F6-1 unió las pruebas de DashPlayer (`1265b5f`); F6-2 limpió
+los avisos del arnés (`efc7d91`); F6-3 completó estilos oscuros (`0c31865`),
+alerta única al guardar (`3f55a1d`), mensaje probado de restauración de sesión
+inválida (`cbf3c4f`) y documentación del estado de mocks (`c3223b4`). Baseline
+al cierre: 217 pruebas en 24 archivos, 0 avisos `act(...)`, lint y build
+verdes.
 
-Siguiente: F6 mínimo — README del frontend, revisión de accesibilidad, unir las pruebas DashPlayer duplicadas, limpiar esos avisos y prueba manual completa con mocks. Evaluar los candidatos de F6 registrados en `SPEC.md`, incluida la miniatura mock inválida. Después comienza el backend en orden A, B, C, D, E, G y H. No iniciar F6 ni backend sin aprobación. La cuota solo se muestra en `/profile`; conservar la caché `["quota"]` y su invalidación.
+Pendiente: F6-3a (foco tras guardar o volver, aplazado porque producción no lo
+hace y SPEC no lo exige); F6-3d (`returnTo` con query y validación same-origin,
+aplazado); prueba directa del mensaje inicial del estado `failed`; comprobación
+visual del tema oscuro. Luego quedan F6-4 (README del frontend), F6-5 (lista
+de comprobación de la prueba manual con mocks) y F6-6 (miniatura mock PNG
+válida de 1×1 como constante, sin binario y con tres builds). No iniciar estas
+tareas ni el backend sin autorización.
+
+La cuota se muestra únicamente en `/profile`; conservar la caché `["quota"]` y
+su invalidación. Los seis videos mock precargados en `processing` se dejan así,
+según `docs/decisiones.md`. Los mocks funcionan con
+`npm.cmd --prefix frontend run dev`, no con `vite preview`.
+
+Los pendientes de contrato permanecen en `SPEC.md` §13. Backend, aún no
+iniciado: orden A, B, C, D, E, G y H. Ver el estado detallado y los criterios
+de traspaso en `docs/HANDOFF.md`.
