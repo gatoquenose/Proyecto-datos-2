@@ -163,10 +163,3 @@ en JSX. `eslint-plugin-jsx-a11y` se añadió porque las pantallas y controles
 del frontend necesitan validación automatizada de labels, roles y atributos
 ARIA. Todas son dependencias de desarrollo y se configuraron sin flags de
 forzado.
-
-## Decisiones Fase A
-
-- El backend se compila con Docker (Linux) como ruta canónica debido a la ausencia de MSVC en algunos equipos del grupo y para garantizar paridad absoluta entre los 4 integrantes.
-- Se fija uiltin-baseline en cpkg.json al commit  df93a05b9de080129e653ec4776d7e14a1b2e4f para asegurar reproducibilidad y estabilidad de las dependencias.
-- OpenTelemetry (Fase A3) queda aplazada a la Fase G; en Fase A solo se implementarán logs estructurados en JSON, y endpoints /health y /ready básicos.
-- Se establece la regla de ejecutar comandos Docker exclusivamente con -p tecflix para evitar colisiones con otros servicios (freellmapi) corriendo en el mismo entorno de desarrollo.
