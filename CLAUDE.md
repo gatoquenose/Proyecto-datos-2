@@ -8,8 +8,7 @@
 - Muestra en texto cada comando completo antes de ejecutarlo.
 - Antes de editar, presenta el plan y la lista exacta de archivos; espera
   aprobación explícita. No amplíes el alcance sin autorización.
-- No firmes commits con `Co-authored-by: Copilot`. Usa el trailer propio de
-  Claude Code: `Co-Authored-By: Claude <noreply@anthropic.com>`.
+- No firmes commits con `Co-authored-by: Copilot` ni añadas trailers de coautoría.
 - Ahorra tokens: lee archivos y rangos puntuales, no repitas lecturas ni la
   suite completa si no hubo cambios. Ejecuta la suite completa una vez antes
   del commit.
