@@ -1,13 +1,15 @@
-﻿.git
+.git
 .idea
 .vite
 build/
-cmake-build-*
+cmake-build-*/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
 data/
 storage/
 .env
+.env.*
+!.env.example
 *.local
 *.log
