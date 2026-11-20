@@ -147,7 +147,6 @@ export function VideoEditForm({
       ? `${partialSaveMessage} ${getApiMessage(error)}`
       : getApiMessage(error);
     setSubmitError(message);
-    onError(message);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {

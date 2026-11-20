@@ -109,6 +109,23 @@ describe("VideoEditPage", () => {
     expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["videos"] });
   });
 
+  it("presenta un solo mensaje accesible cuando falla el guardado", async () => {
+    api.getVideo.mockResolvedValue(video);
+    api.updateVideo.mockRejectedValue(new ApiError(503, {
+      code: "SERVICE_UNAVAILABLE",
+      message: "Metadata no está disponible.",
+      details: null,
+      traceId: "test",
+    }));
+    await renderEditPage();
+    fireEvent.change(await screen.findByLabelText("Título"), { target: { value: "Nueva clase" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent("Metadata no está disponible.");
+  });
+
   it("redirige a la lista con el mensaje de permisos ante un 403", async () => {
     api.getVideo.mockRejectedValue(new ApiError(403, {
       code: "FORBIDDEN",
