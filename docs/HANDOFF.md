@@ -78,3 +78,12 @@ D, E, G y H.
   si una debe cambiar, avisar al usuario.
 - Mostrar el comando completo antes de ejecutarlo. No usar comandos
   interactivos, `--force` ni `git clean`.
+
+## Backend fase A (hecha)
+
+- Build: `docker compose -p tecflix build` compila los tres APIs con Docker (Dockerfile multi-etapa, vcpkg fijado con builtin-baseline).
+- Pruebas: `docker build --target builder -t tecflix-builder-test .` y luego `docker run --rm tecflix-builder-test ctest --test-dir build --output-on-failure` (12 pruebas GoogleTest; el build también las ejecuta).
+- Rutas: `/api/v1/health` y `/api/v1/ready` responden 200; cualquier otra ruta responde 404 con el formato común y un `traceId` generado. `/ready` aún no comprueba dependencias.
+- Configuración: el puerto sale de `TECFLIX_PORT` (por defecto 8080) mediante `IEnvironment`; un valor inválido termina el servicio con un mensaje en español.
+- Pendiente de la fase A: logs JSON estructurados, el resto de variables de entorno y la telemetría OpenTelemetry (aplazada a la fase G).
+- Docker: ejecutar siempre con `-p tecflix`; no usar `docker system prune`, `docker stop` ni `docker rm` fuera de ese proyecto.
