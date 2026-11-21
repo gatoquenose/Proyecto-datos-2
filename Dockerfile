@@ -30,7 +30,7 @@ RUN cmake -S . -B build -G Ninja \
       -DVCPKG_TARGET_TRIPLET=x64-linux \
       -DVCPKG_INSTALLED_DIR=/opt/vcpkg_installed \
       -DVCPKG_MANIFEST_INSTALL=OFF \
-    && cmake --build build
+    && cmake --build build && ctest --test-dir build --output-on-failure
 
 FROM debian:bookworm-slim AS runtime
 RUN useradd --system --uid 10001 --no-create-home tecflix
