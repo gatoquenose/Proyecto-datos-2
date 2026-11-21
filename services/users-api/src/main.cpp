@@ -1,14 +1,3 @@
-#include "tecflix_http.hpp"
-#include "tecflix_config.hpp"
-#include <iostream>
+#include "tecflix_service.hpp"
 
-int main() {
-  try {
-    tecflix::ProcessEnvironment env;
-    auto config = tecflix::load_service_config(env);
-    return tecflix::run_http_service("users-api", config.port);
-  } catch (const std::exception& e) {
-    std::cerr << e.what() << std::endl;
-    return EXIT_FAILURE;
-  }
-}
+int main() { return tecflix::run_service("users-api"); }
