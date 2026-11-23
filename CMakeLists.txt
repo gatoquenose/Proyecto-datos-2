@@ -21,35 +21,23 @@ add_library(tecflix_common INTERFACE)
 target_include_directories(tecflix_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/services/common/include)
 target_link_libraries(tecflix_common INTERFACE Boost::system)
 
-function(add_tecflix_service name)
-  add_executable(${name} services/${name}/src/main.cpp)
-  target_link_libraries(${name} PRIVATE tecflix_common)
-  if(MSVC)
-    target_compile_options(${name} PRIVATE /W4 /permissive-)
-  else()
-    target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic)
-  endif()
-endfunction()
-
-add_tecflix_service(users-api)
-add_tecflix_service(metadata-api)
-add_tecflix_service(streaming-api)
-
 include(CTest)
 if(BUILD_TESTING)
   find_package(GTest CONFIG REQUIRED)
   include(GoogleTest)
-  add_executable(tecflix_http_tests services/common/tests/tecflix_http_test.cpp)
-  target_link_libraries(tecflix_http_tests PRIVATE tecflix_common GTest::gtest_main)
-  if(NOT MSVC)
-    target_compile_options(tecflix_http_tests PRIVATE -Wall -Wextra -Wpedantic)
-  endif()
-  gtest_discover_tests(tecflix_http_tests)
-
-  add_executable(tecflix_config_tests services/common/tests/tecflix_config_test.cpp)
-  target_link_libraries(tecflix_config_tests PRIVATE tecflix_common GTest::gtest_main)
-  if(NOT MSVC)
-    target_compile_options(tecflix_config_tests PRIVATE -Wall -Wextra -Wpedantic)
-  endif()
-  gtest_discover_tests(tecflix_config_tests)
 endif()
+
+include(cmake/TecflixService.cmake)
+
+set(SERVICE_DIRS
+  common
+  users-api
+  metadata-api
+  streaming-api
+)
+
+foreach(dir ${SERVICE_DIRS})
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/services/${dir}/CMakeLists.txt")
+    add_subdirectory("services/${dir}")
+  endif()
+endforeach()
