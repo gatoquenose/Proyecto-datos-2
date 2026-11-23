@@ -5,6 +5,7 @@
 #include <array>
 
 #include "tecflix/auth/Base64Url.hpp"
+#include "tecflix/auth/ConstantTime.hpp"
 #include "tecflix/auth/CryptoRuntime.hpp"
 
 namespace tecflix::auth {

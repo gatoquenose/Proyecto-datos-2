@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include "api/ApiResponses.hpp"
+#include "api/BearerToken.hpp"
 #include "api/HttpStatus.hpp"
 
 namespace tecflix::users {
@@ -15,7 +16,6 @@ namespace {
 using nlohmann::json;
 
 constexpr std::string_view kApiPrefix = "/api/v1";
-constexpr std::string_view kBearerPrefix = "bearer ";
 constexpr int kMinPageSize = 1;
 constexpr int kMaxPageSize = 50;
 
@@ -42,16 +42,6 @@ std::optional<std::string> stringField(const json& body, const char* key) {
         return std::nullopt;
     }
     return found->get<std::string>();
-}
-
-// Extrae el token de "Authorization: Bearer <token>" (la palabra Bearer no distingue mayúsculas).
-std::string_view bearerToken(std::string_view header) {
-    if (header.size() <= kBearerPrefix.size() ||
-        !std::ranges::equal(header.substr(0, kBearerPrefix.size()), kBearerPrefix,
-                            [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; })) {
-        return {};
-    }
-    return header.substr(kBearerPrefix.size());
 }
 
 void sendMissingFields(httplib::Response& response, const std::string& traceId, const json& required) {

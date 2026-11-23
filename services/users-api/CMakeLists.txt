@@ -19,11 +19,15 @@ add_library(users_core STATIC
     src/config/Config.cpp
     src/config/ProcessEnvironment.cpp
     src/api/ApiResponses.cpp
+    src/api/BearerToken.cpp
     src/api/HealthController.cpp
+    src/api/InternalQuotaController.cpp
     src/api/ServerSetup.cpp
     src/api/UsersController.cpp
     src/auth/Argon2PasswordHasher.cpp
     src/auth/UuidV4Generator.cpp
+    src/service/QuotaService.cpp
+    src/service/ReservationSweeper.cpp
     src/service/UserService.cpp
     src/service/UserValidation.cpp
     src/storage/BinaryFile.cpp
@@ -32,8 +36,12 @@ add_library(users_core STATIC
     src/storage/FilePageStore.cpp
     src/storage/MemoryPageStore.cpp
     src/storage/UserFile.cpp
+    src/storage/ReservationRecordCodec.cpp
     src/storage/UserRecordCodec.cpp
+    src/util/IsoTime.cpp
+    src/storage/FileReservationRepository.cpp
     src/storage/FileUserRepository.cpp
+    src/storage/FixedRecordFile.cpp
     src/storage/LockedUserRepository.cpp
 )
 target_include_directories(users_core PUBLIC src)
@@ -57,6 +65,10 @@ add_executable(users_tests
     tests/UserServiceTest.cpp
     tests/LockedUserRepositoryTest.cpp
     tests/UsersControllerTest.cpp
+    tests/IsoTimeTest.cpp
+    tests/ReservationStorageTest.cpp
+    tests/QuotaServiceTest.cpp
+    tests/InternalQuotaControllerTest.cpp
 )
 target_link_libraries(users_tests PRIVATE users_core GTest::gtest GTest::gtest_main)
 target_compile_options(users_tests PRIVATE ${TECFLIX_WARNINGS})

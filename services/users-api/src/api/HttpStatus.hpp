@@ -14,5 +14,6 @@ inline constexpr int kConflict = 409;
 inline constexpr int kPayloadTooLarge = 413;
 inline constexpr int kUnsupportedMediaType = 415;
 inline constexpr int kInternalServerError = 500;
+inline constexpr int kServiceUnavailable = 503;
 
 }  // namespace tecflix::users::http_status

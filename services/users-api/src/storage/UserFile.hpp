@@ -4,16 +4,16 @@
 #include <filesystem>
 
 #include "domain/User.hpp"
-#include "storage/BinaryFile.hpp"
+#include "storage/FixedRecordFile.hpp"
 
 namespace tecflix::users {
 
-// users.dat: una cabecera fija y después un registro por usuario, uno tras otro.
-// Los registros nuevos se agregan al final; borrar solo cambia el estado del registro.
+// users.dat: un registro por usuario, uno tras otro. Los registros nuevos se agregan al
+// final; borrar solo cambia el estado del registro.
 class UserFile {
 public:
-    // Crea el archivo si no existe. Lanza std::runtime_error si la cabecera no es
-    // válida o el tamaño no corresponde a registros completos.
+    // Crea el archivo si no existe. Lanza std::runtime_error si la cabecera no es válida
+    // o el tamaño no corresponde a registros completos.
     explicit UserFile(const std::filesystem::path& path);
 
     // Agrega el usuario al final y devuelve el offset de su registro.
@@ -31,12 +31,7 @@ public:
     [[nodiscard]] std::uint64_t recordCount() const;
 
 private:
-    void writeHeader();
-    void validateHeader() const;
-    void checkOffset(std::uint64_t offset) const;
-
-    BinaryFile file_;
-    std::uint64_t recordCount_ = 0;
+    FixedRecordFile file_;
 };
 
 }  // namespace tecflix::users

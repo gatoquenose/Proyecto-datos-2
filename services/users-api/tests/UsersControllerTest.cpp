@@ -1,131 +1,25 @@
 #include <gtest/gtest.h>
 
-#include <httplib.h>
-
+#include <atomic>
 #include <chrono>
-#include <memory>
-#include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
+#include <vector>
 
-#include "TempFile.hpp"
-#include "TestClock.hpp"
-#include "api/HealthController.hpp"
-#include "api/ServerSetup.hpp"
-#include "api/UsersController.hpp"
-#include "auth/Argon2PasswordHasher.hpp"
-#include "auth/UuidV4Generator.hpp"
-#include "service/UserService.hpp"
-#include "storage/BTree.hpp"
-#include "storage/FileUserRepository.hpp"
-#include "storage/LockedUserRepository.hpp"
-#include "storage/MemoryPageStore.hpp"
-#include "storage/UserFile.hpp"
-#include "tecflix/auth/JwtSigner.hpp"
-#include "tecflix/auth/JwtVerifier.hpp"
+#include "ApiFixture.hpp"
 
 namespace tecflix::users {
 
 using nlohmann::json;
-using testing::TempFile;
-using testing::TestClock;
+using testing::kTestQuota;
+using testing::kTestTokenLifetime;
 
 namespace {
 
-const std::string kSecret = "un-secreto-de-prueba-con-mas-de-32-bytes!";
-constexpr std::uint64_t kQuota = 5'000'000'000ULL;
-constexpr std::chrono::seconds kStart{1'800'000'000};
-constexpr std::chrono::seconds kLifetime{3600};
-constexpr const char* kJson = "application/json";
-constexpr const char* kHost = "127.0.0.1";
+constexpr std::uint64_t kQuota = kTestQuota;
+constexpr std::chrono::seconds kLifetime = kTestTokenLifetime;
 
-// Servidor real en un puerto libre del equipo, con todas las piezas conectadas igual que en main.
-class UsersControllerTest : public ::testing::Test {
-protected:
-    UsersControllerTest()
-        : temp_(std::string{"controller_"} + ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".dat"),
-          file_(temp_.path()),
-          index_(pages_),
-          fileRepository_(file_, index_),
-          repository_(fileRepository_),
-          hasher_(Argon2Params::minimumForTests()),
-          signer_(kSecret, clock_, kLifetime),
-          verifier_(kSecret, clock_),
-          service_(repository_, hasher_, ids_, signer_, kQuota),
-          controller_(service_, verifier_, ids_, kLifetime) {
-        configureServer(server_, ids_);
-        health_.registerRoutes(server_);
-        controller_.registerRoutes(server_);
-        port_ = server_.bind_to_any_port(kHost);
-        thread_ = std::thread([this] { server_.listen_after_bind(); });
-    }
-
-    ~UsersControllerTest() override {
-        server_.stop();
-        thread_.join();
-    }
-
-    struct Reply {
-        int status;
-        json body;
-    };
-
-    static Reply reply(const httplib::Result& result) {
-        EXPECT_TRUE(result) << "el servidor no respondió";
-        if (!result) {
-            return {0, json{}};
-        }
-        json body = result->body.empty() ? json{} : json::parse(result->body, nullptr, false);
-        return {result->status, std::move(body)};
-    }
-
-    static httplib::Headers bearer(const std::string& token) { return {{"Authorization", "Bearer " + token}}; }
-
-    Reply post(const std::string& path, const json& body, const httplib::Headers& headers = {}) {
-        httplib::Client client(kHost, port_);
-        return reply(client.Post("/api/v1" + path, headers, body.dump(), kJson));
-    }
-    Reply get(const std::string& path, const httplib::Headers& headers = {}) {
-        httplib::Client client(kHost, port_);
-        return reply(client.Get("/api/v1" + path, headers));
-    }
-    Reply patch(const std::string& path, const json& body, const httplib::Headers& headers = {}) {
-        httplib::Client client(kHost, port_);
-        return reply(client.Patch("/api/v1" + path, headers, body.dump(), kJson));
-    }
-    Reply del(const std::string& path, const httplib::Headers& headers = {}) {
-        httplib::Client client(kHost, port_);
-        return reply(client.Delete("/api/v1" + path, headers));
-    }
-
-    // Registra e inicia sesión; devuelve el token.
-    std::string registerAndLogin(const std::string& username, const std::string& email) {
-        EXPECT_EQ(post("/users", {{"username", username}, {"email", email}, {"password", "contrasena-valida"}}).status, 201);
-        const Reply login = post("/auth/login", {{"username", username}, {"password", "contrasena-valida"}});
-        EXPECT_EQ(login.status, 200);
-        return login.body.value("accessToken", "");
-    }
-
-    std::string idOf(const std::string& token) { return get("/users/me", bearer(token)).body.value("id", ""); }
-
-    TempFile temp_;
-    UserFile file_;
-    MemoryPageStore pages_;
-    BTree index_;
-    FileUserRepository fileRepository_;
-    LockedUserRepository repository_;
-    Argon2PasswordHasher hasher_;
-    TestClock clock_{kStart};
-    UuidV4Generator ids_;
-    tecflix::auth::JwtSigner signer_;
-    tecflix::auth::JwtVerifier verifier_;
-    UserService service_;
-    UsersController controller_;
-    HealthController health_;
-    httplib::Server server_;
-    int port_ = 0;
-    std::thread thread_;
-};
+class UsersControllerTest : public testing::ApiFixture {};
 
 }  // namespace
 
