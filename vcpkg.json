@@ -3,6 +3,9 @@
   "version-string": "0.1.0",
   "dependencies": [
     "boost-beast",
-    "mongo-cxx-driver"
+    "mongo-cxx-driver",
+    "libsodium",
+    "nlohmann-json",
+    "gtest"
   ]
 }

@@ -45,3 +45,7 @@ target_link_libraries(metadata-api PRIVATE
     mongo::bsoncxx_shared
     mongo::mongocxx_shared
 )
+
+add_subdirectory(services/common/auth)
+
+target_link_libraries(metadata-api PRIVATE tecflix_auth)
