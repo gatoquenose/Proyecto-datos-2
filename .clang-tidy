@@ -1,3 +1,10 @@
-Checks: '-*,bugprone-*,performance-*,readability-*'
+Checks: >
+  -*,
+  bugprone-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -modernize-use-trailing-return-type
 WarningsAsErrors: ''
 HeaderFilterRegex: 'services/.*'

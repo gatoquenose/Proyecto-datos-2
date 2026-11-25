@@ -10,10 +10,8 @@ compile_commands.json
 /frontend/node_modules/
 /frontend/dist/
 /frontend/*.tsbuildinfo
-
 # IDE metadata
 /.idea/
-
 # Local configuration and runtime data
 .env
 *.local
@@ -22,3 +20,6 @@ compile_commands.json
 /storage/*
 !/storage/.gitkeep
 /build-v143/
+build/
+vcpkg_installed/
+data/
