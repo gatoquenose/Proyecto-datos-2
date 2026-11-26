@@ -1,4 +1,5 @@
 #pragma once
+#include "MetadataProcessingCallbacks.hpp"
 
 // Tecflix metadata: POST, GET listado + cursor, GET por ID, PATCH y DELETE logico.
 // Usa el JWT compartido de la API de usuarios y MongoDB C++ Driver 4.x.
@@ -532,6 +533,7 @@ inline void ensure_indexes(mongocxx::database& /*db*/) {
 inline std::optional<detail::Response> handle_extra_routes(
         const detail::Request& request, mongocxx::database& db,
         const auth::JwtVerifier& verifier) {
+    if (auto cb = processing_callbacks::handle(request, db)) return std::move(*cb);
     const std::string target{request.target().data(), request.target().size()};
     const auto question = target.find('?');
     const std::string path = target.substr(0, question);

@@ -23,3 +23,8 @@ compile_commands.json
 build/
 vcpkg_installed/
 data/
+
+# Segmentos DASH generados por FFmpeg
+*.m4s
+
+/services/metadata-api/src/MetadataProcessingCallbacks.hpp.bak
