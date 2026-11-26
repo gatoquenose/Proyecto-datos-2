@@ -2,9 +2,14 @@
   "name": "tecflix",
   "version-string": "0.1.0",
   "dependencies": [
+    "boost-beast",
+    "cpp-httplib",
+    "libsodium",
+    "nlohmann-json",
+    "gtest",
     {
-      "name": "boost-beast",
-      "features": ["ssl"]
+      "name": "opentelemetry-cpp",
+      "features": ["otlp-http"]
     }
   ]
 }
