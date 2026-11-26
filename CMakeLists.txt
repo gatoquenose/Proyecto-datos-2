@@ -36,8 +36,14 @@ endfunction()
 # users-api tiene su propio CMakeLists (biblioteca, ejecutable y pruebas).
 add_subdirectory(services/users-api)
 
+# Shared authentication is already registered by users-api in some branches.
+# Register it here only if users-api did not create that target.
+if(NOT TARGET tecflix_auth)
+  add_subdirectory(services/common/auth)
+endif()
+
 # Temporal: metadata-api y streaming-api siguen usando el helper compartido
-# hasta que sus responsables construyan su versión.
+# hasta que sus responsables construyan su versi├│n.
 add_tecflix_service(metadata-api)
 add_tecflix_service(streaming-api)
 find_package(bsoncxx CONFIG REQUIRED)
@@ -53,3 +59,15 @@ target_link_libraries(metadata-api PRIVATE
 )
 
 target_link_libraries(metadata-api PRIVATE tecflix_auth)
+
+# Streaming API: JWT, HTTP and JSON
+find_package(httplib CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(unofficial-sodium CONFIG REQUIRED)
+
+target_link_libraries(streaming-api PRIVATE
+  tecflix_auth
+  httplib::httplib
+  nlohmann_json::nlohmann_json
+  unofficial-sodium::sodium
+)
