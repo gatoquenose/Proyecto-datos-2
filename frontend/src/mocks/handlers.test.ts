@@ -58,7 +58,7 @@ describe("DASH mock manifest", () => {
   it("serves BaseURL before the first AdaptationSet", async () => {
     authStore.setSession("mock-jwt", mockUser);
     const response = await fetch("http://localhost:8083/api/v1/videos/mock-video/manifest.mpd", {
-      headers: { Authorization: "Bearer mock-jwt" },
+      headers: await mockAuthorization(),
     });
     const manifest = new DOMParser().parseFromString(await response.text(), "application/xml");
     const parserError = manifest.querySelector("parsererror");
@@ -438,5 +438,80 @@ describe("subidas mock", () => {
     vi.stubEnv("VITE_MOCK_UPLOAD_FAILURE", "invalid");
     configureMockUploadControls();
     expect(warning).toHaveBeenCalledWith("VITE_MOCK_UPLOAD_FAILURE inválida: invalid");
+  });
+
+  it("devuelve una miniatura PNG 1x1 válida", async () => {
+    authStore.setSession("mock-jwt", mockUser);
+    const response = await fetch("http://localhost:8083/api/v1/videos/mock-video/thumbnail", {
+      headers: { Authorization: "Bearer mock-jwt" },
+    });
+    expect(response.status).toBe(200);
+    const buffer = new Uint8Array(await response.arrayBuffer());
+
+    // 1. Firma PNG (8 bytes)
+    const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+    expect(Array.from(buffer.slice(0, 8))).toEqual(pngSignature);
+
+    // Helper CRC32
+    const makeCrcTable = () => {
+      let c;
+      const crcTable = [];
+      for (let n = 0; n < 256; n++) {
+        c = n;
+        for (let k = 0; k < 8; k++) {
+          c = ((c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1));
+        }
+        crcTable[n] = c;
+      }
+      return crcTable;
+    };
+    const crcTable = makeCrcTable();
+    const computeCrc = (buf: Uint8Array) => {
+      let crc = 0xffffffff;
+      for (let i = 0; i < buf.length; i++) {
+        crc = (crc >>> 8) ^ crcTable[(crc ^ buf[i]) & 0xff];
+      }
+      return (crc ^ 0xffffffff) >>> 0;
+    };
+
+    // Parse chunks
+    let offset = 8;
+    const chunks: { length: number; type: string; data: Uint8Array; crc: number }[] = [];
+    while (offset < buffer.length) {
+      // Chunk format: length(4), type(4), data(length), crc(4)
+      // offset points to start of length
+      const length = new DataView(buffer.buffer, buffer.byteOffset + offset, 4).getUint32(0);
+      const typeBytes = buffer.slice(offset + 4, offset + 8);
+      const type = String.fromCharCode(...typeBytes);
+      const data = buffer.slice(offset + 8, offset + 8 + length);
+      const crc = new DataView(buffer.buffer, buffer.byteOffset + offset + 8 + length, 4).getUint32(0);
+
+
+      // Validar CRC del chunk (tipo + datos)
+      const typeAndData = new Uint8Array(4 + length);
+      typeAndData.set(typeBytes, 0);
+      typeAndData.set(data, 4);
+
+      const calculatedCrc = computeCrc(typeAndData);
+      expect(calculatedCrc).toBe(crc);
+
+      chunks.push({ length, type, data, crc });
+      offset += 12 + length;
+    }
+
+    // Verificar chunk IHDR
+    const ihdr = chunks.find((c) => c.type === "IHDR");
+    expect(ihdr).toBeDefined();
+    if (ihdr) {
+      const dv = new DataView(ihdr.data.buffer, ihdr.data.byteOffset, ihdr.data.byteLength);
+      expect(dv.getUint32(0)).toBe(1); // ancho
+      expect(dv.getUint32(4)).toBe(1); // alto
+    }
+
+    // Verificar chunk IEND (últimos 12 bytes)
+    const lastChunk = chunks[chunks.length - 1];
+    expect(lastChunk.type).toBe("IEND");
+    const expectedIendTrailer = [0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130];
+    expect(Array.from(buffer.slice(buffer.length - 12))).toEqual(expectedIendTrailer);
   });
 });

@@ -40,6 +40,8 @@ export const mockUploadControls = {
   configuredFailure: null as { kind: "5xx-once" | "5xx-always" | "network-once" | "network-always" | "400" | "checksum-final"; chunk?: number } | null,
 };
 
+const MOCK_THUMBNAIL_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAALSURBVBhXY2AAAgAABQABqtXIUQAAAABJRU5ErkJggg==";
+
 export const configureMockUploadControls = (): void => {
   const value = import.meta.env.VITE_MOCK_UPLOAD_FAILURE ?? "";
   mockUploadControls.configuredFailure = null;
@@ -318,7 +320,8 @@ export const handlers = [
   }),
   http.get("http://localhost:8083/api/v1/videos/:videoId/thumbnail", ({ request }) => {
     if (!authorized(request)) return error(401, "MISSING_TOKEN", "Token requerido.");
-    return new HttpResponse(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), {
+    const bytes = Uint8Array.from(atob(MOCK_THUMBNAIL_BASE64), (c) => c.charCodeAt(0));
+    return new HttpResponse(bytes, {
       status: 200,
       headers: { "Content-Type": "image/png" },
     });
