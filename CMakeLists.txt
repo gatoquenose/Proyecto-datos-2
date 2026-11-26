@@ -34,3 +34,19 @@ endfunction()
 add_tecflix_service(users-api)
 add_tecflix_service(metadata-api)
 add_tecflix_service(streaming-api)
+
+
+# Biblioteca compartida de autenticacion JWT
+add_subdirectory(services/common/auth)
+
+# Dependencias de streaming
+find_package(httplib CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(unofficial-sodium CONFIG REQUIRED)
+
+target_link_libraries(streaming-api PRIVATE
+    tecflix_auth
+    httplib::httplib
+    nlohmann_json::nlohmann_json
+    unofficial-sodium::sodium
+)

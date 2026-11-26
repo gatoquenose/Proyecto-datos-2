@@ -21,3 +21,9 @@ compile_commands.json
 /data/*.idx
 /storage/*
 !/storage/.gitkeep
+# Archivos generados durante la compilacion
+/build-v143/
+/vcpkg_installed/
+
+# Segmentos generados por FFmpeg
+*.m4s
