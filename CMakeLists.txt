@@ -40,3 +40,16 @@ add_subdirectory(services/users-api)
 # hasta que sus responsables construyan su versión.
 add_tecflix_service(metadata-api)
 add_tecflix_service(streaming-api)
+find_package(bsoncxx CONFIG REQUIRED)
+find_package(mongocxx CONFIG REQUIRED)
+
+target_sources(metadata-api PRIVATE
+    services/metadata-api/src/VideoRepository.cpp
+)
+
+target_link_libraries(metadata-api PRIVATE
+    mongo::bsoncxx_shared
+    mongo::mongocxx_shared
+)
+
+target_link_libraries(metadata-api PRIVATE tecflix_auth)

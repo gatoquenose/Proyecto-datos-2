@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <functional>
 
 namespace tecflix {
 namespace asio = boost::asio;
@@ -29,7 +30,17 @@ inline http::response<http::string_body> response_for(const http::request<http::
   return response;
 }
 
-inline int run_http_service(const char* service_name, unsigned short port = 8080) {
+using HttpHandler = std::function<
+    http::response<http::string_body>(
+        const http::request<http::string_body>&
+    )
+>;
+
+inline int run_http_service(
+    const char* service_name,
+    unsigned short port = 8080,
+    HttpHandler handler = response_for
+) {
   try {
     asio::io_context context;
     tcp::acceptor acceptor{context, {tcp::v4(), port}};
@@ -40,7 +51,7 @@ inline int run_http_service(const char* service_name, unsigned short port = 8080
       beast::flat_buffer buffer;
       http::request<http::string_body> request;
       http::read(socket, buffer, request);
-      auto response = response_for(request);
+      auto response = handler(request);
       http::write(socket, response);
       beast::error_code ignored;
       socket.shutdown(tcp::socket::shutdown_send, ignored);
