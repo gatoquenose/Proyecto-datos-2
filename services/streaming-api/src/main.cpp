@@ -216,6 +216,7 @@ public:
         server.Put(R"(/api/v1/uploads/([0-9A-Fa-f-]{36})/chunks/([0-9]+))", [this](const auto& req, auto& res) { chunk(req, res); });
         server.Get(R"(/api/v1/uploads/([0-9A-Fa-f-]{36}))", [this](const auto& req, auto& res) { get(req, res); });
         server.Delete(R"(/api/v1/uploads/([0-9A-Fa-f-]{36}))", [this](const auto& req, auto& res) { cancel(req, res); });
+        server.Delete(R"(/api/v1/internal/videos/([0-9A-Fa-f-]{36}))", [this](const auto& req, auto& res) { requestPhysicalDeletion(req, res); });
         server.Post(R"(/api/v1/uploads/([0-9A-Fa-f-]{36})/complete)", [this](const auto& req, auto& res) { complete(req, res); });
         server.Get(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/processing)", [this](const auto& req, auto& res) { processing(req, res); });
         server.Get(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/manifest\.mpd)", [this](const auto& req, auto& res) { media(req, res, "manifest.mpd"); });
@@ -245,6 +246,8 @@ private:
     bool toolsAvailable_ = false;
     std::condition_variable cv_;
     std::deque<std::string> jobs_;
+    std::deque<std::string> deletionJobs_;
+    std::set<std::string> deletingVideos_;
     std::thread worker_;
     bool stopping_ = false;
 
@@ -292,15 +295,25 @@ private:
     void workLoop() {
         for (;;) {
             std::string id;
+            std::string deletionId;
             Upload snapshot;
             {
                 std::unique_lock lock(mutex_);
-                cv_.wait(lock, [this] { return stopping_ || !jobs_.empty(); });
+                cv_.wait(lock, [this] { return stopping_ || !jobs_.empty() || !deletionJobs_.empty(); });
                 if (stopping_) return;
-                id = std::move(jobs_.front()); jobs_.pop_front();
-                const auto it = uploads_.find(id);
-                if (it == uploads_.end()) continue;
-                snapshot = it->second;
+                if (!deletionJobs_.empty()) {
+                    deletionId = std::move(deletionJobs_.front());
+                    deletionJobs_.pop_front();
+                } else {
+                    id = std::move(jobs_.front()); jobs_.pop_front();
+                    const auto it = uploads_.find(id);
+                    if (it == uploads_.end()) continue;
+                    snapshot = it->second;
+                }
+            }
+            if (!deletionId.empty()) {
+                performPhysicalDeletion(deletionId);
+                continue;
             }
             if (snapshot.status == "ready" && !snapshot.metadataSynced) {
                 const bool synced = notifyMetadata(snapshot, true, snapshot.durationSeconds,
@@ -661,6 +674,71 @@ private:
             fail(res, 500, "INTERNAL_ERROR", std::string("Error al completar: ") + ex.what());
         }
     }
+    // Solo metadata puede ordenar un borrado mediante el token entre servicios.
+    void requestPhysicalDeletion(const httplib::Request& req, httplib::Response& res) {
+        const std::string header = req.get_header_value("Authorization");
+        constexpr std::string_view prefix = "Bearer ";
+        if (header.size() != prefix.size() + token_.size() ||
+            header.compare(0, prefix.size(), prefix) != 0 ||
+            sodium_memcmp(header.data() + prefix.size(), token_.data(), token_.size()) != 0) {
+            fail(res, 401, "INVALID_TOKEN", "Token de servicio invalido"); return;
+        }
+        const std::string videoId = req.matches[1].str();
+        if (!uuid(videoId)) { fail(res, 400, "VALIDATION_ERROR", "videoId invalido"); return; }
+        {
+            std::lock_guard lock(mutex_);
+            for (const auto& [_, u] : uploads_) {
+                if (u.videoId == videoId && u.status == "active") {
+                    fail(res, 409, "INVALID_STATE", "Cancela la subida activa primero"); return;
+                }
+            }
+            if (deletingVideos_.insert(videoId).second) {
+                deletionJobs_.push_back(videoId);
+                cv_.notify_one();
+            }
+        }
+        res.status = 202;
+    }
+
+    // El mismo worker que transcodifica procesa el borrado; nunca elimina
+    // un directorio mientras FFmpeg esta trabajando sobre ese video.
+    void performPhysicalDeletion(const std::string& videoId) {
+        try {
+            std::vector<std::string> ids;
+            {
+                std::lock_guard lock(mutex_);
+                for (const auto& [uploadId, u] : uploads_)
+                    if (u.videoId == videoId) ids.push_back(uploadId);
+            }
+            for (const auto& id : ids) {
+                // Si Windows no permite eliminar algun archivo, la excepcion
+                // impide notificar la liberacion de cuota; permite reintento.
+                fs::remove_all(root_ / "uploads" / id);
+                fs::remove(root_ / "sessions" / (id + ".json"));
+                std::lock_guard lock(mutex_);
+                uploads_.erase(id);
+            }
+            httplib::Client client(metadataHost_, metadataPort_);
+            client.set_connection_timeout(3);
+            client.set_read_timeout(8);
+            const httplib::Headers h{{"Authorization", "Bearer " + token_}};
+            const auto endpoint = "/api/v1/internal/videos/" + videoId + "/streaming-deleted";
+            auto reply = client.Post(endpoint, h, "", "application/json");
+            if (!reply || reply->status != 204) {
+                std::cerr << "Pendiente callback streaming-deleted " << videoId
+                          << " (" << (reply ? std::to_string(reply->status) : "sin respuesta")
+                          << "); reintentar DELETE metadata\n";
+            } else {
+                std::cout << "Video borrado y cuota confirmada: " << videoId << '\n';
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "No se pudo borrar video " << videoId << ": " << ex.what()
+                      << "; reintentar DELETE metadata\n";
+        }
+        std::lock_guard lock(mutex_);
+        deletingVideos_.erase(videoId);
+    }
+
     void processing(const httplib::Request& req, httplib::Response& res) {
         const auto claims = user(req, res);
         if (!claims) return;
