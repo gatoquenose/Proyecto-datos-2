@@ -2,14 +2,14 @@
 
 ## Estado verificado
 
-- Rama: `frontend-f1`.
-- Último commit: `c3223b4` (`docs: registrar estados de videos mock precargados`).
-- Árbol limpio al iniciar el traspaso.
-- Baseline verificada: lint y build pasan; 217 pruebas en 24 archivos; 0 avisos
+- Rama: `frontend-f1` (publicada en origin).
+- Último commit del frontend: `d6e33a7` (`Corrige la lista de prueba manual con mocks`).
+- Árbol limpio.
+- Baseline verificada: lint y build pasan; 218 pruebas en 24 archivos; 0 avisos
   `act(...)`. El build conserva la advertencia de Vite por el chunk de Shaka
   mayor a 500 kB.
-- F0–F5 están hechos. No iniciar backend ni avanzar fuera del alcance que
-  autorice el usuario.
+- F0–F6 están hechos. Backend: fase A hecha; los APIs avanzan en ramas de los
+  compañeros (ver «Contratos y backend»).
 
 ## Subfases F6
 
@@ -18,14 +18,16 @@
 | F6-1 | Hecha | `1265b5f`: consolidar `DashPlayer.test.ts` y `DashPlayer.test.tsx`, conservando las aserciones. |
 | F6-2 | Hecha | `efc7d91`: eliminar los avisos `act(...)` en VideoCard, ProtectedRoute y ProfilePage solo desde el arnés. |
 | F6-3 | Parcial | `0c31865`: campos legibles en tema oscuro; `3f55a1d`: una sola alerta de error al guardar; `cbf3c4f`: mensaje de restauración inválida probado y documentado; `c3223b4`: decisión de conservar los precargados en processing documentada. F6-3a y F6-3d están aplazadas. |
-| F6-4 | Pendiente | README del frontend. |
-| F6-5 | Pendiente (no verificado) | Lista de comprobación para la prueba manual completa con mocks; no verificada por commit previo. |
-| F6-6 | Pendiente | Miniatura mock válida de 1×1 como constante base64 en `handlers.ts`, con prueba primero en rojo; no agregar binarios sin aprobación. |
+| F6-4 | Hecha | `b43ad94` y `a3901b8`: README del frontend. |
+| F6-5 | Hecha | `d6e33a7`: lista de comprobación manual (`docs/prueba-manual-mocks.md`), ejecutada con mocks sin fallos. |
+| F6-6 | Hecha | `4fd14f9`: miniatura mock PNG 1×1 válida como constante base64 en `handlers.ts`, con su prueba. |
 
 F6-3 agregó una prueba: `presenta un solo mensaje accesible cuando falla el
 guardado`. Esta falló primero con dos alertas y pasó con una. La prueba de
 restauración inválida usa un 401 explícito y comprueba el mensaje y la limpieza
-de sesión. La suite quedó en 217/24/0.
+de sesión. F6-6 agregó la prueba `devuelve una miniatura PNG 1x1 válida`, que
+comprueba la firma PNG, el tamaño, el CRC de cada chunk y el chunk final IEND.
+La suite quedó en 218/24/0.
 
 ## Pendientes y decisiones aplazadas
 
@@ -39,10 +41,6 @@ de sesión. La suite quedó en 217/24/0.
 - Comprobar visualmente en navegador los campos del tema oscuro. Contraste
   calculado: 11.86:1 para texto y 3.08:1 para borde; no hay prueba automática
   de color.
-- Miniatura mock actual: 8 bytes, PNG inválido. Decidir si se usa el PNG mínimo
-  válido aprobado; hacerlo como F6-6, sin binario y con sus tres builds de
-  producción antes del commit.
-- README del frontend y prueba manual completa con mocks.
 
 ## Decisiones que no deben reabrirse
 
@@ -64,7 +62,11 @@ JWT, borrar videos `processing` sin archivos, y reintentar un 400 de
 `completeUpload` con el mismo checksum sin iniciar ni cancelar otra subida ni
 reenviar fragmentos, conservando la reserva.
 
-El backend no ha comenzado. Cuando se autorice, el orden definido es A, B, C,
+Estado del backend: la fase A está hecha. Los compañeros trabajan en las ramas
+`feature/users-api`, `feature/metadata-api` y `feature/streaming-api`, y la
+rama `feature/integracion-tecflix` las une con el frontend. Pendiente:
+integración E2E sin mocks (registro, login, subir, transcodificar, listar,
+reproducir), observabilidad (G) y documentación (H). Orden definido: A, B, C,
 D, E, G y H.
 
 ## Trampas del entorno
