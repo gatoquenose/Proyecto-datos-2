@@ -54,6 +54,36 @@ TEST(ConfigTest, ReadsEveryVariableFromTheEnvironment) {
     EXPECT_EQ(config.reservationSweepInterval, std::chrono::seconds{5});
 }
 
+TEST(ConfigTest, TelemetryIsOffUnlessAnEndpointIsGiven) {
+    const auto config = Config::fromEnvironment(environmentWith());
+
+    EXPECT_TRUE(config.otlpEndpoint.empty());
+    EXPECT_EQ(config.serviceName, "users-api");
+    EXPECT_EQ(config.metricExportInterval, std::chrono::milliseconds{15000});
+}
+
+TEST(ConfigTest, ReadsTheOpenTelemetryVariables) {
+    const auto config = Config::fromEnvironment(environmentWith({{"OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318"},
+                                                                 {"OTEL_SERVICE_NAME", "usuarios"},
+                                                                 {"OTEL_METRIC_EXPORT_INTERVAL", "5000"}}));
+
+    EXPECT_EQ(config.otlpEndpoint, "http://otel-collector:4318");
+    EXPECT_EQ(config.serviceName, "usuarios");
+    EXPECT_EQ(config.metricExportInterval, std::chrono::milliseconds{5000});
+}
+
+TEST(ConfigTest, OtelSdkDisabledTurnsTelemetryOffEvenWithAnEndpoint) {
+    const auto config = Config::fromEnvironment(
+        environmentWith({{"OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318"}, {"OTEL_SDK_DISABLED", "TRUE"}}));
+
+    EXPECT_TRUE(config.otlpEndpoint.empty());
+}
+
+TEST(ConfigTest, RejectsAMetricIntervalOutOfRange) {
+    EXPECT_THROW(Config::fromEnvironment(environmentWith({{"OTEL_METRIC_EXPORT_INTERVAL", "10"}})), std::invalid_argument);
+    EXPECT_THROW(Config::fromEnvironment(environmentWith({{"OTEL_METRIC_EXPORT_INTERVAL", "rapido"}})), std::invalid_argument);
+}
+
 TEST(ConfigTest, SecretsAreRequired) {
     EXPECT_THROW(Config::fromEnvironment(FakeEnvironment{}), std::invalid_argument);
     EXPECT_THROW(Config::fromEnvironment(FakeEnvironment{{{"JWT_SECRET", ""}, {"SERVICE_TOKEN", kServiceToken}}}),

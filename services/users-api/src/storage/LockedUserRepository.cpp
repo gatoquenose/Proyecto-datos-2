@@ -39,4 +39,9 @@ std::optional<User> LockedUserRepository::findByEmail(std::string_view email) co
     return inner_.findByEmail(email);
 }
 
+UsageTotals LockedUserRepository::usageTotals() const {
+    const std::scoped_lock lock{mutex_};
+    return inner_.usageTotals();
+}
+
 }  // namespace tecflix::users

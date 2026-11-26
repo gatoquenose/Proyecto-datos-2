@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 
 #include "domain/User.hpp"
 #include "storage/FixedRecordFile.hpp"
@@ -27,6 +28,9 @@ public:
     void overwrite(std::uint64_t offset, const User& user);
 
     void markDeleted(std::uint64_t offset);
+
+    // Recorre los usuarios que no están eliminados, en el orden del archivo.
+    void forEachActive(const std::function<void(const User&)>& visit) const;
 
     [[nodiscard]] std::uint64_t recordCount() const;
 

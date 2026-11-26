@@ -14,10 +14,13 @@
 #include "api/HealthController.hpp"
 #include "api/InternalQuotaController.hpp"
 #include "api/ServerSetup.hpp"
+#include "api/TracedRouter.hpp"
 #include "api/UsersController.hpp"
 #include "auth/Argon2PasswordHasher.hpp"
 #include "auth/UuidV4Generator.hpp"
 #include "service/QuotaService.hpp"
+#include "telemetry/ActivityTracker.hpp"
+#include "tecflix/telemetry/IHttpServerMetrics.hpp"
 #include "service/UserService.hpp"
 #include "storage/BTree.hpp"
 #include "storage/FileReservationRepository.hpp"
@@ -61,12 +64,14 @@ protected:
           verifier_(kTestSecret, clock_),
           userService_(users_, hasher_, ids_, signer_, kTestQuota),
           quotaService_(users_, reservations_, clock_, kTestReservationLifetime),
-          usersController_(userService_, verifier_, ids_, kTestTokenLifetime),
+          activity_(clock_),
+          router_(server_, httpMetrics_, ids_, "users-api"),
+          usersController_(userService_, verifier_, ids_, activity_, kTestTokenLifetime),
           quotaController_(quotaService_, kTestServiceToken, ids_) {
         configureServer(server_, ids_);
         health_.registerRoutes(server_);
-        usersController_.registerRoutes(server_);
-        quotaController_.registerRoutes(server_);
+        usersController_.registerRoutes(router_);
+        quotaController_.registerRoutes(router_);
         port_ = server_.bind_to_any_port(kHost);
         thread_ = std::thread([this] { server_.listen_after_bind(); });
     }
@@ -144,6 +149,9 @@ protected:
     tecflix::auth::JwtVerifier verifier_;
     UserService userService_;
     QuotaService quotaService_;
+    ActivityTracker activity_;
+    tecflix::telemetry::NullHttpServerMetrics httpMetrics_;
+    TracedRouter router_;
     UsersController usersController_;
     InternalQuotaController quotaController_;
     HealthController health_;

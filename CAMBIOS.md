@@ -132,6 +132,17 @@ Documento vivo. Cada cambio nuevo se agrega como una entrada al final de la secc
 - Limitaciones conocidas: si el proceso se cae entre guardar la reserva y actualizar el uso del usuario, la cuota puede quedar desajustada (se resuelve con WAL y recuperación, pendientes). Todas las operaciones de cuota se hacen de una en una (un solo candado): oportunidad de optimización para la V2.
 - 166 pruebas, todas pasan en Linux. Probado también el ejecutable: reservar, ajustar, liberar, persistencia al reiniciar y arranque sin `SERVICE_TOKEN`.
 
+### 2026-11-24 – Fase G (parte 1): OpenTelemetry en users-api
+
+- Nueva dependencia: **opentelemetry-cpp** con la feature `otlp-http` (en `vcpkg.json`). Se exporta por **OTLP/HTTP (puerto 4318)** y no por gRPC (4317): gRPC es muy pesado de compilar en Windows. **El `.env.example` trae `http://otel-collector:4317`; hay que cambiarlo a `4318`** (y el Collector debe tener habilitado el receptor OTLP/HTTP).
+- Nueva biblioteca compartida `services/common/telemetry` (`tecflix_telemetry`): `TelemetrySetup` (proveedores y exportadores, único lugar que conoce el SDK), `ServerSpan` (un span por petición, continúa el `traceparent` del cliente), `OtelHttpServerMetrics`, `GaugeRegistry` y los medidores de proceso (`ProcessSampler`, CPU y memoria en Windows y Linux).
+- `users-api`: `TracedRouter` envuelve cada ruta con su traza y sus métricas HTTP, y convierte las excepciones en un 500 con el `traceId` real y un log JSON con `trace_id` y `span_id`. El campo `traceId` de todos los errores ahora es el id de la traza (`TraceAwareIdGenerator`).
+- Métricas del SPEC implementadas: `http_requests_total`, `http_request_errors_total`, `http_request_duration_seconds`, `users_btree_search_duration_seconds`, `users_disk_pages_read_total` (y `_written_`), `users_created_total`, `users_deleted_total`, `service_cpu_usage`, `service_memory_usage`, `service_disk_usage`, `storage_used_bytes`, `storage_quota_bytes` y `active_users` (usuarios con actividad en los últimos 15 minutos). Detalle en `docs/observabilidad.md`.
+- La telemetría se apaga sola si no hay `OTEL_EXPORTER_OTLP_ENDPOINT` (o con `OTEL_SDK_DISABLED=true`): el servicio y las pruebas no necesitan Collector.
+- Corregido durante la verificación: el adaptador de headers guardaba `traceparent` y `tracestate` en el mismo texto y el segundo pisaba al primero, así que no se continuaba la traza del cliente; y el router registraba el código `-1` cuando un endpoint no fijaba el estado.
+- Nuevo repositorio: `usageTotals()` (recorre `users.dat` para los medidores de almacenamiento).
+- 194 pruebas, todas pasan en Linux. Verificado además con el SDK real: `users-api` envió trazas y todas las métricas por OTLP a un receptor de prueba, y el `traceId` de un error coincidió con el `traceparent` enviado.
+
 ## Pendientes
 
 - [ ] El equipo confirma las 6 decisiones de la tabla.
@@ -150,7 +161,9 @@ Documento vivo. Cada cambio nuevo se agrega como una entrada al final de la secc
 - [x] Argon2id, JWT y `UserService` (registro y login).
 - [x] Endpoints REST públicos de `users-api` y arranque con la configuración del entorno.
 - [x] `users-api`: `/ready` y endpoints internos de reservas de cuota con `SERVICE_TOKEN`.
-- [ ] Telemetría de `users-api` con OpenTelemetry (métricas y trazas del SPEC) y `trace_id` real en los errores.
+- [x] Telemetría de `users-api` con OpenTelemetry (métricas y trazas del SPEC) y `trace_id` real en los errores.
+- [ ] Cambiar `OTEL_EXPORTER_OTLP_ENDPOINT` a puerto 4318 en `.env.example` y en cada `.env`.
+- [ ] Collector, Prometheus, Grafana y Aspire Dashboard en Docker Compose (Fase G restante).
 - [ ] Docker Compose y Dockerfile de `users-api`.
 - [ ] Agregar `INVALID_CREDENTIALS` a la lista de códigos del SPEC y `data/` al `.gitignore`.
 - [ ] WAL, checksums CRC32C y reconstrucción del índice.

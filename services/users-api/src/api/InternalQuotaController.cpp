@@ -87,13 +87,13 @@ InternalQuotaController::InternalQuotaController(QuotaService& quota, std::strin
                                                  const IIdGenerator& traceIds)
     : quota_(quota), serviceToken_(std::move(serviceToken)), traceIds_(traceIds) {}
 
-void InternalQuotaController::registerRoutes(httplib::Server& server) const {
+void InternalQuotaController::registerRoutes(TracedRouter& router) const {
     using Request = httplib::Request;
     using Response = httplib::Response;
     const std::string base{kBasePath};
-    server.Post(base, [this](const Request& req, Response& res) { reserve(req, res); });
-    server.Post(base + "/:reservationId/settle", [this](const Request& req, Response& res) { settle(req, res); });
-    server.Post(base + "/:reservationId/release", [this](const Request& req, Response& res) { release(req, res); });
+    router.Post(base, [this](const Request& req, Response& res) { reserve(req, res); });
+    router.Post(base + "/:reservationId/settle", [this](const Request& req, Response& res) { settle(req, res); });
+    router.Post(base + "/:reservationId/release", [this](const Request& req, Response& res) { release(req, res); });
 }
 
 bool InternalQuotaController::authenticate(const httplib::Request& request, httplib::Response& response,

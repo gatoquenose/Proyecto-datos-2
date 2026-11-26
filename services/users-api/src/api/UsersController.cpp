@@ -60,22 +60,22 @@ std::string path(std::string_view suffix) {
 }  // namespace
 
 UsersController::UsersController(UserService& service, const tecflix::auth::JwtVerifier& verifier,
-                                 const IIdGenerator& traceIds, std::chrono::seconds tokenLifetime)
-    : service_(service), verifier_(verifier), traceIds_(traceIds), tokenLifetime_(tokenLifetime) {}
+                                 const IIdGenerator& traceIds, ActivityTracker& activity, std::chrono::seconds tokenLifetime)
+    : service_(service), verifier_(verifier), traceIds_(traceIds), activity_(activity), tokenLifetime_(tokenLifetime) {}
 
-void UsersController::registerRoutes(httplib::Server& server) const {
+void UsersController::registerRoutes(TracedRouter& router) const {
     using Request = httplib::Request;
     using Response = httplib::Response;
-    server.Post(path("/users"), [this](const Request& req, Response& res) { registerUser(req, res); });
-    server.Post(path("/auth/login"), [this](const Request& req, Response& res) { login(req, res); });
+    router.Post(path("/users"), [this](const Request& req, Response& res) { registerUser(req, res); });
+    router.Post(path("/auth/login"), [this](const Request& req, Response& res) { login(req, res); });
     // /users/me y /users/me/quota se registran antes que /users/:id para que "me" no se tome como un id.
-    server.Get(path("/users/me"), [this](const Request& req, Response& res) { getCurrentUser(req, res); });
-    server.Patch(path("/users/me"), [this](const Request& req, Response& res) { updateCurrentUser(req, res); });
-    server.Get(path("/users/me/quota"), [this](const Request& req, Response& res) { getQuota(req, res); });
-    server.Get(path("/users"), [this](const Request& req, Response& res) { searchUsers(req, res); });
-    server.Get(path("/users/:id"), [this](const Request& req, Response& res) { getUser(req, res); });
-    server.Patch(path("/users/:id"), [this](const Request& req, Response& res) { updateUser(req, res); });
-    server.Delete(path("/users/:id"), [this](const Request& req, Response& res) { deleteUser(req, res); });
+    router.Get(path("/users/me"), [this](const Request& req, Response& res) { getCurrentUser(req, res); });
+    router.Patch(path("/users/me"), [this](const Request& req, Response& res) { updateCurrentUser(req, res); });
+    router.Get(path("/users/me/quota"), [this](const Request& req, Response& res) { getQuota(req, res); });
+    router.Get(path("/users"), [this](const Request& req, Response& res) { searchUsers(req, res); });
+    router.Get(path("/users/:id"), [this](const Request& req, Response& res) { getUser(req, res); });
+    router.Patch(path("/users/:id"), [this](const Request& req, Response& res) { updateUser(req, res); });
+    router.Delete(path("/users/:id"), [this](const Request& req, Response& res) { deleteUser(req, res); });
 }
 
 std::optional<tecflix::auth::JwtClaims> UsersController::authenticate(const httplib::Request& request,
@@ -97,6 +97,7 @@ std::optional<tecflix::auth::JwtClaims> UsersController::authenticate(const http
         sendError(response, http_status::kUnauthorized, "INVALID_TOKEN", "El token no es válido", traceId);
         return std::nullopt;
     }
+    activity_.touch(verified.claims.subject);
     return verified.claims;
 }
 
@@ -168,6 +169,7 @@ void UsersController::login(const httplib::Request& request, httplib::Response& 
         sendError(response, http_status::kUnauthorized, "INVALID_CREDENTIALS", "Usuario o contraseña incorrectos", traceId);
         return;
     }
+    activity_.touch(outcome.user.id);
     sendJson(response, http_status::kOk,
              json{{"accessToken", outcome.token},
                   {"tokenType", "Bearer"},

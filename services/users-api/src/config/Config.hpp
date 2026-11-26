@@ -20,6 +20,9 @@ struct Config {
     std::chrono::seconds reservationLifetime;
     std::chrono::seconds reservationSweepInterval;
     std::filesystem::path dataDirectory;
+    std::string serviceName;
+    std::string otlpEndpoint;  // vacío = telemetría desactivada
+    std::chrono::milliseconds metricExportInterval;
 
     // Lanza std::invalid_argument si falta JWT_SECRET o SERVICE_TOKEN, o algún valor es inválido.
     static Config fromEnvironment(const IEnvironment& environment);

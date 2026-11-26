@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string_view>
@@ -7,6 +8,13 @@
 #include "domain/User.hpp"
 
 namespace tecflix::users {
+
+// Totales de todos los usuarios activos (para los medidores de almacenamiento).
+struct UsageTotals {
+    std::uint64_t users = 0;
+    std::uint64_t usedBytes = 0;
+    std::uint64_t quotaBytes = 0;
+};
 
 enum class AddResult { Added, IdTaken, UsernameTaken, EmailTaken };
 
@@ -38,6 +46,9 @@ public:
     [[nodiscard]] virtual std::optional<User> findById(std::string_view id) const = 0;
     [[nodiscard]] virtual std::optional<User> findByUsername(std::string_view username) const = 0;
     [[nodiscard]] virtual std::optional<User> findByEmail(std::string_view email) const = 0;
+
+    // Recorre todos los registros: cuesta lo mismo que leer users.dat completo.
+    [[nodiscard]] virtual UsageTotals usageTotals() const = 0;
 };
 
 }  // namespace tecflix::users

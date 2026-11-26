@@ -44,6 +44,17 @@ void UserFile::markDeleted(std::uint64_t offset) {
     file_.write(offset, buffer);
 }
 
+void UserFile::forEachActive(const std::function<void(const User&)>& visit) const {
+    for (std::uint64_t ordinal = 0; ordinal < file_.recordCount(); ++ordinal) {
+        RecordBuffer buffer{};
+        file_.read(file_.offsetOfRecord(ordinal), buffer);
+        const DecodedRecord decoded = UserRecordCodec::decode(buffer);
+        if (decoded.status == RecordStatus::Active) {
+            visit(decoded.user);
+        }
+    }
+}
+
 std::uint64_t UserFile::recordCount() const {
     return file_.recordCount();
 }

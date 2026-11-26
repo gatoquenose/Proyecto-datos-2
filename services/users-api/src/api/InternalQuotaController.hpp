@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "api/TracedRouter.hpp"
 #include "domain/IIdGenerator.hpp"
 #include "service/QuotaService.hpp"
 
@@ -15,7 +16,7 @@ class InternalQuotaController {
 public:
     InternalQuotaController(QuotaService& quota, std::string serviceToken, const IIdGenerator& traceIds);
 
-    void registerRoutes(httplib::Server& server) const;
+    void registerRoutes(TracedRouter& router) const;
 
 private:
     void reserve(const httplib::Request& request, httplib::Response& response) const;

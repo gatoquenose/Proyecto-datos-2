@@ -22,6 +22,7 @@ public:
     [[nodiscard]] std::optional<User> findById(std::string_view id) const override;
     [[nodiscard]] std::optional<User> findByUsername(std::string_view username) const override;
     [[nodiscard]] std::optional<User> findByEmail(std::string_view email) const override;
+    [[nodiscard]] UsageTotals usageTotals() const override;
 
 private:
     IUserRepository& inner_;

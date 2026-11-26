@@ -6,8 +6,10 @@
 #include <optional>
 #include <string>
 
+#include "api/TracedRouter.hpp"
 #include "domain/IIdGenerator.hpp"
 #include "service/UserService.hpp"
+#include "telemetry/ActivityTracker.hpp"
 #include "tecflix/auth/JwtVerifier.hpp"
 
 namespace tecflix::users {
@@ -17,9 +19,9 @@ namespace tecflix::users {
 class UsersController {
 public:
     UsersController(UserService& service, const tecflix::auth::JwtVerifier& verifier, const IIdGenerator& traceIds,
-                    std::chrono::seconds tokenLifetime);
+                    ActivityTracker& activity, std::chrono::seconds tokenLifetime);
 
-    void registerRoutes(httplib::Server& server) const;
+    void registerRoutes(TracedRouter& router) const;
 
 private:
     void registerUser(const httplib::Request& request, httplib::Response& response) const;
@@ -44,6 +46,7 @@ private:
     UserService& service_;
     const tecflix::auth::JwtVerifier& verifier_;
     const IIdGenerator& traceIds_;
+    ActivityTracker& activity_;
     std::chrono::seconds tokenLifetime_;
 };
 

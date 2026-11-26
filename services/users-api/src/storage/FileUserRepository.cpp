@@ -74,6 +74,16 @@ std::optional<User> FileUserRepository::findByEmail(std::string_view email) cons
     return readByKey(emailKey(email));
 }
 
+UsageTotals FileUserRepository::usageTotals() const {
+    UsageTotals totals;
+    file_.forEachActive([&totals](const User& user) {
+        ++totals.users;
+        totals.usedBytes += user.usedBytes;
+        totals.quotaBytes += user.quotaBytes;
+    });
+    return totals;
+}
+
 AddResult FileUserRepository::add(const User& user) {
     validate(user);
     const std::string idIndexKey = idKey(user.id);

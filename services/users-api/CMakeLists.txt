@@ -3,6 +3,11 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(GTest REQUIRED)
 find_package(unofficial-sodium CONFIG REQUIRED)
 
+# Medición con OpenTelemetry, compartida con las otras APIs (se agrega una sola vez).
+if(NOT TARGET tecflix_telemetry)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/services/common/telemetry ${CMAKE_BINARY_DIR}/services/common/telemetry)
+endif()
+
 # Tokens JWT, compartidos con las otras APIs (se agrega una sola vez).
 if(NOT TARGET tecflix_auth)
   add_subdirectory(${CMAKE_SOURCE_DIR}/services/common/auth ${CMAKE_BINARY_DIR}/services/common/auth)
@@ -23,6 +28,7 @@ add_library(users_core STATIC
     src/api/HealthController.cpp
     src/api/InternalQuotaController.cpp
     src/api/ServerSetup.cpp
+    src/api/TracedRouter.cpp
     src/api/UsersController.cpp
     src/auth/Argon2PasswordHasher.cpp
     src/auth/UuidV4Generator.cpp
@@ -38,6 +44,11 @@ add_library(users_core STATIC
     src/storage/UserFile.cpp
     src/storage/ReservationRecordCodec.cpp
     src/storage/UserRecordCodec.cpp
+    src/telemetry/ActivityTracker.cpp
+    src/telemetry/InstrumentedPageStore.cpp
+    src/telemetry/InstrumentedUserRepository.cpp
+    src/telemetry/OtelUsersMetrics.cpp
+    src/telemetry/TraceAwareIdGenerator.cpp
     src/util/IsoTime.cpp
     src/storage/FileReservationRepository.cpp
     src/storage/FileUserRepository.cpp
@@ -45,7 +56,7 @@ add_library(users_core STATIC
     src/storage/LockedUserRepository.cpp
 )
 target_include_directories(users_core PUBLIC src)
-target_link_libraries(users_core PUBLIC httplib::httplib nlohmann_json::nlohmann_json tecflix_auth unofficial-sodium::sodium)
+target_link_libraries(users_core PUBLIC httplib::httplib nlohmann_json::nlohmann_json tecflix_auth tecflix_telemetry unofficial-sodium::sodium)
 target_compile_options(users_core PRIVATE ${TECFLIX_WARNINGS})
 
 add_executable(users-api src/main.cpp)
@@ -69,6 +80,9 @@ add_executable(users_tests
     tests/ReservationStorageTest.cpp
     tests/QuotaServiceTest.cpp
     tests/InternalQuotaControllerTest.cpp
+    tests/TelemetryTest.cpp
+    tests/TracedRouterTest.cpp
+    tests/UsageTotalsTest.cpp
 )
 target_link_libraries(users_tests PRIVATE users_core GTest::gtest GTest::gtest_main)
 target_compile_options(users_tests PRIVATE ${TECFLIX_WARNINGS})

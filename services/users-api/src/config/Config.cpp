@@ -1,6 +1,8 @@
 #include "config/Config.hpp"
 
+#include <algorithm>
 #include <charconv>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 
@@ -17,6 +19,14 @@ constexpr std::string_view kSweepIntervalVariable = "RESERVATION_SWEEP_SECONDS";
 constexpr std::string_view kJwtLifetimeVariable = "JWT_EXPIRATION_SECONDS";
 constexpr std::string_view kQuotaVariable = "DEFAULT_QUOTA_BYTES";
 constexpr std::string_view kDataDirectoryVariable = "USERS_DATA_DIR";
+constexpr std::string_view kServiceNameVariable = "OTEL_SERVICE_NAME";
+constexpr std::string_view kOtlpEndpointVariable = "OTEL_EXPORTER_OTLP_ENDPOINT";
+constexpr std::string_view kSdkDisabledVariable = "OTEL_SDK_DISABLED";
+constexpr std::string_view kMetricIntervalVariable = "OTEL_METRIC_EXPORT_INTERVAL";  // milisegundos, como en el estándar
+constexpr std::string_view kDefaultServiceName = "users-api";
+constexpr std::uint64_t kDefaultMetricIntervalMs = 15000;
+constexpr std::uint64_t kMinMetricIntervalMs = 100;
+constexpr std::uint64_t kMaxMetricIntervalMs = 3600ULL * 1000;
 
 constexpr std::uint16_t kDefaultPort = 8080;
 constexpr std::string_view kDefaultLogLevel = "info";
@@ -41,6 +51,16 @@ std::uint64_t parseInteger(std::string_view variable, const std::string& text, s
                                     " y " + std::to_string(max));
     }
     return value;
+}
+
+// OTEL_SDK_DISABLED=true (sin distinguir mayúsculas) apaga la telemetría.
+bool isTrue(const std::optional<std::string>& value) {
+    if (!value || value->size() != 4) {
+        return false;
+    }
+    std::string lower = *value;
+    std::ranges::transform(lower, lower.begin(), [](char c) { return static_cast<char>(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c); });
+    return lower == "true";
 }
 
 std::string requiredSecret(const IEnvironment& environment, std::string_view variable, std::size_t minLength) {
@@ -83,6 +103,12 @@ Config Config::fromEnvironment(const IEnvironment& environment) {
     config.reservationSweepInterval =
         secondsOrDefault(environment, kSweepIntervalVariable, kDefaultSweepIntervalSeconds, 1, kMaxSeconds);
     config.dataDirectory = environment.get(kDataDirectoryVariable).value_or(std::string{kDefaultDataDirectory});
+    config.serviceName = environment.get(kServiceNameVariable).value_or(std::string{kDefaultServiceName});
+    config.otlpEndpoint = isTrue(environment.get(kSdkDisabledVariable)) ? std::string{}
+                                                                        : environment.get(kOtlpEndpointVariable).value_or("");
+    config.metricExportInterval = std::chrono::milliseconds{static_cast<std::chrono::milliseconds::rep>(
+        integerOrDefault(environment, kMetricIntervalVariable, kDefaultMetricIntervalMs, kMinMetricIntervalMs,
+                         kMaxMetricIntervalMs))};
     return config;
 }
 
