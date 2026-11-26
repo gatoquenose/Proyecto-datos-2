@@ -186,7 +186,15 @@ public:
           frontendOrigin_(envOr("FRONTEND_ORIGIN", "http://localhost:5173")) {
         fs::create_directories(root_ / "sessions");
         fs::create_directories(root_ / "uploads");
+        // Las ordenes aceptadas sobreviven reinicios/crashes del proceso.
+        fs::create_directories(root_ / "pending-deletions");
         uploads_ = load(root_);
+        for (const auto& entry : fs::directory_iterator(root_ / "pending-deletions")) {
+            if (!entry.is_regular_file() || entry.path().extension() != ".pending") continue;
+            const auto videoId = entry.path().stem().string();
+            if (uuid(videoId) && deletingVideos_.insert(videoId).second)
+                deletionJobs_.push_back(videoId);
+        }
         // En reinicios se recuperan trabajos que ya tenian original.bin y notificaciones pendientes.
         for (const auto& [id, u] : uploads_) {
             if ((u.status == "processing" && fs::exists(root_ / "uploads" / id / "original.bin")) ||
@@ -693,6 +701,21 @@ private:
                 }
             }
             if (deletingVideos_.insert(videoId).second) {
+                // Persistir la orden ANTES de responder 202: si el proceso termina,
+                // se reanuda la limpieza al iniciar de nuevo.
+                try {
+                    const auto path = root_ / "pending-deletions" / (videoId + ".pending");
+                    fs::create_directories(path.parent_path());
+                    std::ofstream pending(path, std::ios::binary | std::ios::trunc);
+                    if (!pending) throw std::runtime_error("No se pudo guardar orden de borrado");
+                    pending << videoId << '\n';
+                    pending.flush();
+                    if (!pending.good()) throw std::runtime_error("No se pudo persistir orden de borrado");
+                } catch (const std::exception&) {
+                    deletingVideos_.erase(videoId);
+                    fail(res, 500, "INTERNAL_ERROR", "No se pudo persistir la orden de borrado");
+                    return;
+                }
                 deletionJobs_.push_back(videoId);
                 cv_.notify_one();
             }
@@ -729,6 +752,11 @@ private:
                           << " (" << (reply ? std::to_string(reply->status) : "sin respuesta")
                           << "); reintentar DELETE metadata\n";
             } else {
+                // Quitar el marcador SOLO cuando metadata confirme la liberacion.
+                // La confirmacion interna es idempotente si se repite al reiniciar.
+                std::error_code ec;
+                fs::remove(root_ / "pending-deletions" / (videoId + ".pending"), ec);
+                if (ec) std::cerr << "Marcador pendiente de borrar " << videoId << ": " << ec.message() << '\n';
                 std::cout << "Video borrado y cuota confirmada: " << videoId << '\n';
             }
         } catch (const std::exception& ex) {
@@ -777,7 +805,7 @@ int main() {
         const int port = std::stoi(envOr("STREAMING_API_PORT", "8083"));
         if (port < 1 || port > 65535) throw std::runtime_error("Puerto invalido");
         std::cout << "streaming-api (E2: subida + FFmpeg + DASH) escuchando en " << port << '\n';
-        if (!server.listen("127.0.0.1", port)) throw std::runtime_error("No se pudo abrir el puerto");
+        if (!server.listen(envOr("STREAMING_BIND_HOST", "127.0.0.1"), port)) throw std::runtime_error("No se pudo abrir el puerto");
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "No se pudo iniciar streaming-api: " << ex.what() << '\n';
