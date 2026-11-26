@@ -4,11 +4,10 @@ import { ApiError, friendlyErrorMessage } from "../types/api";
 import type { components as MetadataComponents } from "../types/generated/metadata";
 import type { components as StreamingComponents } from "../types/generated/streaming";
 import { hashFileIncrementally, DEFAULT_CHUNK_SIZE_BYTES } from "../utils/checksum";
-import { parsePositiveIntegerEnv } from "../utils/parsePositiveIntegerEnv";
 
 type CreateVideoRequest = MetadataComponents["schemas"]["CreateVideoRequest"];
 type Video = MetadataComponents["schemas"]["Video"];
-type StartUploadResponse = StreamingComponents["schemas"]["StartUploadResponse"];
+type StartUploadResponse = StreamingComponents["schemas"]["UploadStatus"];
 type UploadStatus = StreamingComponents["schemas"]["UploadStatus"];
 type ProcessingStatus = StreamingComponents["schemas"]["ProcessingStatus"];
 
@@ -19,14 +18,16 @@ export const DEFAULT_UPLOAD_POLL_MS = 2000;
 export const DEFAULT_UPLOAD_CHUNK_SIZE = DEFAULT_CHUNK_SIZE_BYTES;
 
 const configuredChunkSize = (): number => {
-  return parsePositiveIntegerEnv(import.meta.env.VITE_UPLOAD_CHUNK_SIZE, DEFAULT_UPLOAD_CHUNK_SIZE);
+  return DEFAULT_UPLOAD_CHUNK_SIZE;
 };
-
 export interface UploadClients {
   createVideo: (body: CreateVideoRequest) => Promise<Video>;
   startUpload: (videoId: string, body: {
-    fileName: string; contentType: string; totalBytes: number; chunkSize: number;
-  }) => Promise<StartUploadResponse>;
+  sizeBytes: number;
+  totalChunks: number;
+  fileChecksum: string;
+  contentType: string;
+}) => Promise<StartUploadResponse>;
   uploadChunk: (uploadId: string, chunkNumber: number, bytes: Blob, checksum: string, contentRange: string, options?: { signal?: AbortSignal }) => Promise<void>;
   getUpload: (uploadId: string) => Promise<UploadStatus>;
   completeUpload: (uploadId: string, body: { fileChecksum: string }) => Promise<UploadStatus>;
@@ -139,16 +140,23 @@ export function useVideoUpload(clients: UploadClients, pollInterval = DEFAULT_UP
         dispatch({ type: "ids", videoId });
       }
       dispatch({ type: "phase", phase: "starting" });
-      let started = resume ? await retry(() => clients.getUpload(uploadId!), controller.signal) : await retry(() => clients.startUpload(videoId!, {
-        fileName: file.name, contentType: file.type, totalBytes: file.size, chunkSize,
-      }), controller.signal);
+
+      const hashes = await hashFileIncrementally(file, chunkSize);
+      fileChecksum = hashes.fileChecksum;
+
+      let started = resume
+        ? await retry(() => clients.getUpload(uploadId!), controller.signal)
+        : await retry(() => clients.startUpload(videoId!, {
+            sizeBytes: file.size,
+            totalChunks: hashes.chunkChecksums.length,
+            fileChecksum: hashes.fileChecksum,
+            contentType: file.type,
+          }), controller.signal);
       if (!resume) {
         uploadId = (started as StartUploadResponse).uploadId;
         saveResume({ uploadId, videoId, fileName: file.name, sizeBytes: file.size, contentType: file.type, chunkSize });
       }
       dispatch({ type: "ids", videoId, uploadId: uploadId ?? undefined });
-      const hashes = await hashFileIncrementally(file, chunkSize);
-      fileChecksum = hashes.fileChecksum;
       const receivedBytes = Number(started.receivedBytes ?? 0);
       const firstChunk = Math.floor(receivedBytes / chunkSize);
       dispatch({ type: "phase", phase: "uploading" });

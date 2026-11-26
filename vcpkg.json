@@ -2,17 +2,17 @@
     "name":  "tecflix",
     "version-string":  "0.1.0",
     "dependencies":  [
-                         "boost-beast",
-                         "cpp-httplib",
-                         "libsodium",
-                         "nlohmann-json",
-                         "gtest",
-                         {
-                             "name":  "opentelemetry-cpp",
-                             "features":  [
-                                              "otlp-http"
-                                          ]
-                         },
-                         "mongo-cxx-driver"
-                     ]
+                        "boost-beast",
+                        "cpp-httplib",
+                        "libsodium",
+                        "nlohmann-json",
+                        "gtest",
+                        {
+                            "name":  "opentelemetry-cpp",
+                            "features":  [
+                                            "otlp-http"
+                                        ]
+                        },
+                        "mongo-cxx-driver"
+                    ]
 }

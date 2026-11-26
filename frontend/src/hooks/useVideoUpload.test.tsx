@@ -57,6 +57,10 @@ describe("useVideoUpload", () => {
     "usa el tamaño de fragmento por defecto con VITE_UPLOAD_CHUNK_SIZE=%s",
     async (configuredChunkSize) => {
       vi.stubEnv("VITE_UPLOAD_CHUNK_SIZE", configuredChunkSize);
+      const saveSessionSpy = vi.spyOn(
+      Object.getPrototypeOf(sessionStorage),
+      "setItem"
+    );
       const clients = {
         createVideo: vi.fn().mockResolvedValue(video),
         startUpload: vi.fn().mockResolvedValue(start),
@@ -73,11 +77,20 @@ describe("useVideoUpload", () => {
         await result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never);
       });
 
-      expect(clients.startUpload.mock.calls[0][1].chunkSize).toBe(DEFAULT_UPLOAD_CHUNK_SIZE);
-    },
-  );
+      const resumeCall = saveSessionSpy.mock.calls.find(
+      ([key]) => key === UPLOAD_SESSION_KEY
+      );
 
-  it("acepta VITE_UPLOAD_CHUNK_SIZE=1 sin imponer un mínimo práctico", async () => {
+      expect(resumeCall).toBeDefined();
+
+      const savedSession = JSON.parse(resumeCall![1]);
+
+      expect(savedSession.chunkSize).toBe(DEFAULT_UPLOAD_CHUNK_SIZE);
+      expect(clients.startUpload.mock.calls[0][1].totalChunks).toBe(1);
+      },
+    );
+
+  it("ignora VITE_UPLOAD_CHUNK_SIZE=1 y utiliza el tamaño del servidor", async () => {
     vi.stubEnv("VITE_UPLOAD_CHUNK_SIZE", "1");
     const clients = {
       createVideo: vi.fn().mockResolvedValue(video),
@@ -95,8 +108,8 @@ describe("useVideoUpload", () => {
       await result.current.start(new File(["abc"], "video.mp4", { type: "video/mp4" }), metadata as never);
     });
 
-    expect(clients.startUpload.mock.calls[0][1].chunkSize).toBe(1);
-    expect(clients.uploadChunk).toHaveBeenCalledTimes(3);
+    expect(clients.startUpload.mock.calls[0][1].totalChunks).toBe(1);
+    expect(clients.uploadChunk).toHaveBeenCalledTimes(1);
   });
 
   it("ejecuta metadata, inicio, fragmentos, completar y procesamiento", async () => {
