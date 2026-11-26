@@ -53,3 +53,11 @@ Configuradas en `.env.example`:
 - Los tipos se generan con `gen:api` y no se editan a mano.
 - La cuota se muestra únicamente en `/profile`.
 - El JWT se almacena en `sessionStorage`.
+
+## 9. Desarrollo con mocks y build de producción
+- Para usar mocks en local, crea `frontend/.env.local` con `VITE_USE_MOCKS=true` y ejecuta `npm.cmd --prefix frontend run dev`.
+- El build de producción excluye MSW y los datos de prueba. Para comprobarlo, compila con `VITE_USE_MOCKS` en `true`, en `false` y sin definir, y verifica que `frontend\dist` no tenga archivos `browser-*.js`, `.m4s` ni `manifest.mpd`, ni las cadenas `mock-jwt`, `CorrectHorse` o `ana.tec`.
+- Los comandos de la sección 3 se ejecutan desde la raíz del repo con `--prefix frontend`, o desde dentro de `frontend/` sin él.
+
+## 10. Regenerar tipos
+`npm.cmd --prefix frontend run gen:api` regenera `src/types/generated/` desde `docs/openapi/`. No se editan a mano.
