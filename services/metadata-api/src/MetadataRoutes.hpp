@@ -1,5 +1,6 @@
 #pragma once
 #include "MetadataProcessingCallbacks.hpp"
+#include "MetadataDeletionCallbacks.hpp"
 
 // Tecflix metadata: POST, GET listado + cursor, GET por ID, PATCH y DELETE logico.
 // Usa el JWT compartido de la API de usuarios y MongoDB C++ Driver 4.x.
@@ -489,30 +490,51 @@ inline Response patch_video(const Request& request, mongocxx::database& db,
     return respond(request, http::status::ok, video_json(current->view()));
 }
 
-// DELETE aun NO elimina archivos DASH ni libera cuota: marca la solicitud pendiente.
-// Devolver 204 antes de que streaming confirme seria un falso positivo.
+// DELETE coordinado con streaming; la cuota se libera en streaming-deleted.
 inline Response delete_video(const Request& request, mongocxx::database& db,
-                            const auth::JwtClaims& claims, const std::string& id) {
+                             const auth::JwtClaims& claims, const std::string& id) {
     if (!valid_id(id)) return error(request, http::status::bad_request, "VALIDATION_ERROR", "ID invalido");
-    auto doc = db["videos"].find_one(b::make_document(b::kvp("_id", id),
-        b::kvp("deletedAt", bsoncxx::types::b_null{})));
+    auto filter = b::make_document(b::kvp("_id", id));
+    auto doc = db["videos"].find_one(filter.view());
     if (!doc) return error(request, http::status::not_found, "NOT_FOUND", "Video no encontrado");
     if (str(doc->view(), "ownerId") != claims.subject)
         return error(request, http::status::forbidden, "FORBIDDEN", "Solo el propietario puede eliminar");
 
-    const auto timestamp = now_utc();
-    auto filter = b::make_document(b::kvp("_id", id), b::kvp("ownerId", claims.subject),
-                                b::kvp("deletedAt", bsoncxx::types::b_null{}));
-    auto set_doc = b::make_document(b::kvp("$set", b::make_document(
-        b::kvp("deletedAt", timestamp),
-        b::kvp("deletionStatus", "pending_streaming_deletion"),
-        b::kvp("updatedAt", timestamp))));
-    auto result = db["videos"].update_one(filter.view(), set_doc.view());
-    if (!result || result->matched_count() == 0)
-        return error(request, http::status::not_found, "NOT_FOUND", "Video no encontrado");
-    return respond(request, http::status::accepted, Json{
-        {"id", id}, {"status", "pending_streaming_deletion"},
-        {"message", "Eliminacion logica registrada; falta confirmar streaming y liberar cuota"}});
+    const std::string deletionStatus = str(doc->view(), "deletionStatus");
+    if (!deletionStatus.empty() && deletionStatus != "pending_streaming_deletion")
+        return error(request, http::status::conflict, "INVALID_STATE", "Eliminacion incompatible");
+    const bool wasPending = deletionStatus == "pending_streaming_deletion";
+    const auto now = now_utc();
+    if (!wasPending) {
+        auto liveFilter = b::make_document(b::kvp("_id", id), b::kvp("ownerId", claims.subject),
+                                          b::kvp("deletedAt", bsoncxx::types::b_null{}));
+        auto update = b::make_document(b::kvp("$set", b::make_document(
+            b::kvp("deletedAt", now), b::kvp("deletionStatus", "pending_streaming_deletion"),
+            b::kvp("updatedAt", now))));
+        auto changed = db["videos"].update_one(liveFilter.view(), update.view());
+        if (!changed || changed->matched_count() == 0)
+            return error(request, http::status::conflict, "INVALID_STATE", "Video en eliminacion");
+    }
+
+    const auto code = deletion_callbacks::request_streaming_delete(id);
+    if (code && *code == 202) return respond(request, http::status::no_content, Json::object());
+
+    // Si streaming RECHAZO el borrado (por ejemplo, subida activa), es seguro
+    // deshacer el tombstone. Si hubo timeout, el resultado es ambiguo: mantener
+    // el pendiente para evitar revivir un video cuyos archivos ya se borran.
+    if (code && !wasPending) {
+        auto pending = b::make_document(b::kvp("_id", id), b::kvp("ownerId", claims.subject),
+                                        b::kvp("deletionStatus", "pending_streaming_deletion"));
+        auto undo = b::make_document(
+            b::kvp("$unset", b::make_document(b::kvp("deletedAt", ""), b::kvp("deletionStatus", ""))),
+            b::kvp("$set", b::make_document(b::kvp("updatedAt", now_utc()))));
+        db["videos"].update_one(pending.view(), undo.view());
+    }
+    if (code && *code == 409)
+        return error(request, http::status::conflict, "INVALID_STATE",
+                     "Hay una subida activa; cancelala antes de eliminar el video");
+    return error(request, http::status::bad_gateway, "DEPENDENCY_ERROR",
+                 "Streaming no confirmo el borrado; reintenta DELETE con el mismo videoId");
 }
 
 }  // namespace detail
@@ -533,6 +555,7 @@ inline void ensure_indexes(mongocxx::database& /*db*/) {
 inline std::optional<detail::Response> handle_extra_routes(
         const detail::Request& request, mongocxx::database& db,
         const auth::JwtVerifier& verifier) {
+    if (auto deleted = deletion_callbacks::handle(request, db)) return std::move(*deleted);
     if (auto cb = processing_callbacks::handle(request, db)) return std::move(*cb);
     const std::string target{request.target().data(), request.target().size()};
     const auto question = target.find('?');
