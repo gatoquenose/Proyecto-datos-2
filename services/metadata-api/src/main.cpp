@@ -17,6 +17,13 @@
 #include <nlohmann/json.hpp>
 #include "MetadataRoutes.hpp"
 
+namespace {
+std::string mongoUriFromEnv() {
+    const char* value = std::getenv("MONGO_URI");
+    return (value && *value) ? value : "mongodb://127.0.0.1:27017";
+}
+}  // namespace
+
 int main() {
     try {
         // Inicializar el driver de MongoDB
@@ -24,7 +31,7 @@ int main() {
 
         // Crear la conexion con MongoDB
         mongocxx::client cliente{
-            mongocxx::uri{"mongodb://127.0.0.1:27017"}
+            mongocxx::uri{mongoUriFromEnv()}
         };
 
         // Seleccionar la base de datos Tecflix

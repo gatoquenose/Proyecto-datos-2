@@ -14,14 +14,11 @@ services:
       USERS_API_HOST: users-api
       STREAMING_API_HOST: streaming-api
     restart: on-failure
-    depends_on: [users-api]
+    depends_on: [users-api, mongo]
     ports: ["8082:8082"]
 
-  # Metadata tiene la conexión a Mongo fija en 127.0.0.1. Mientras no se
-  # corrija en el código, Mongo comparte la red de metadata-api.
   mongo:
     image: mongo:7
-    network_mode: "service:metadata-api"
     volumes: ["mongo-data:/data/db"]
 
   streaming-api:
