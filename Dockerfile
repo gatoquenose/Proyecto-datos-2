@@ -41,7 +41,7 @@ USER tecflix
 EXPOSE 8080
 
 FROM runtime AS users-api
-COPY --from=builder /src/build/users-api /usr/local/bin/users-api
+COPY --from=builder /src/build/services/users-api/users-api /usr/local/bin/users-api
 ENTRYPOINT ["/usr/local/bin/users-api"]
 
 FROM runtime AS metadata-api
