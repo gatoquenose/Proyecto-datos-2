@@ -50,3 +50,8 @@ target_link_libraries(streaming-api PRIVATE
     nlohmann_json::nlohmann_json
     unofficial-sodium::sodium
 )
+# Biblioteca compartida de observabilidad
+if(NOT TARGET tecflix_telemetry)
+    add_subdirectory(services/common/telemetry)
+endif()
+target_link_libraries(streaming-api PRIVATE tecflix_telemetry)

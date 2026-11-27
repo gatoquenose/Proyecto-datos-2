@@ -6,6 +6,12 @@
     "cpp-httplib",
     "libsodium",
     "nlohmann-json",
-    "gtest"
+    "gtest",
+    {
+      "name": "opentelemetry-cpp",
+      "features": [
+        "otlp-http"
+      ]
+    }
   ]
 }
