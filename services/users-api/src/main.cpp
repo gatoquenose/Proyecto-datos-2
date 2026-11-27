@@ -27,6 +27,7 @@
 #include "storage/FilePageStore.hpp"
 #include "storage/FileReservationRepository.hpp"
 #include "storage/FileUserRepository.hpp"
+#include "storage/FileWriteAheadLog.hpp"
 #include "storage/IndexRebuilder.hpp"
 #include "storage/LockedUserRepository.hpp"
 #include "storage/UserFile.hpp"
@@ -49,6 +50,7 @@ constexpr const char* kBindAddress = "0.0.0.0";
 constexpr const char* kServiceVersion = "1.0.0";
 constexpr const char* kUsersFileName = "users.dat";
 constexpr const char* kIndexFileName = "users.idx";
+constexpr const char* kWalFileName = "users.wal";
 constexpr const char* kReservationsFileName = "reservations.dat";
 constexpr const char* kReservationsIndexFileName = "reservations.idx";
 constexpr std::string_view kRebuildIndexFlag = "--rebuild-index";
@@ -134,7 +136,12 @@ int main(int argc, char** argv) {
         FilePageStore userPages{config.dataDirectory / kIndexFileName};
         InstrumentedPageStore measuredUserPages{userPages, usersMetrics};
         BTree index{measuredUserPages};
-        FileUserRepository fileRepository{usersFile, index};
+        FileWriteAheadLog userLog{config.dataDirectory / kWalFileName};
+        FileUserRepository fileRepository{usersFile, index, userLog};
+        // Si el proceso anterior cayó a mitad de una escritura, se termina antes de atender peticiones.
+        if (fileRepository.recoverPending()) {
+            logEvent(std::cerr, "warn", "se rehizo una operación de usuarios que había quedado a medias (WAL)");
+        }
         LockedUserRepository lockedRepository{fileRepository};
         InstrumentedUserRepository repository{lockedRepository, usersMetrics};
 

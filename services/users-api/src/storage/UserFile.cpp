@@ -73,4 +73,22 @@ std::uint64_t UserFile::recordCount() const {
     return file_.recordCount();
 }
 
+std::uint64_t UserFile::nextOffset() const {
+    return file_.offsetOfRecord(file_.recordCount());
+}
+
+RecordBuffer UserFile::readImage(std::uint64_t offset) const {
+    RecordBuffer image{};
+    file_.read(offset, image);
+    return image;
+}
+
+void UserFile::appendImage(const RecordBuffer& image) {
+    file_.append(image);
+}
+
+void UserFile::writeImage(std::uint64_t offset, const RecordBuffer& image) {
+    file_.write(offset, image);
+}
+
 }  // namespace tecflix::users

@@ -1,6 +1,6 @@
 # Almacenamiento de usuarios: users.dat y árbol B (users.idx)
 
-Fase B. Incluye detección de corrupción (CRC32C) y reconstrucción del índice; el WAL se documenta cuando se agregue.
+Fase B. Incluye detección de corrupción (CRC32C), reconstrucción del índice y registro de intención (WAL) para que las escrituras sean atómicas.
 
 ## Para qué sirve
 `users.dat` guarda los usuarios, un registro tras otro. Buscar uno obligaría a leer todo el archivo.
@@ -86,10 +86,44 @@ CRC32C (polinomio de Castagnoli) calculado sobre todos sus bytes **menos** los 4
 - **Manual:** `users-api --rebuild-index` (con las mismas variables de entorno del servicio) reconstruye y termina.
   Sale con código 1 si encontró registros dañados. Con el servicio detenido. En Docker:
   `docker compose run --rm users-api --rebuild-index`.
-- Límite conocido: sin WAL, una caída entre `index.erase` y `markDeleted` al borrar un usuario deja el
-  registro activo y la reconstrucción lo "resucita". El WAL (siguiente paso) cierra ese caso.
 - Los registros dañados en `users.dat` no se pueden reparar: se omiten y se reportan.
 
+## Atomicidad: WAL (`users.wal`)
+Agregar, actualizar o eliminar un usuario toca dos archivos (`users.dat` y `users.idx`) y varias claves del
+árbol. Si el proceso cae en medio, quedarían a medias. El WAL lo evita:
+1. **Anotar:** antes de tocar nada, se escribe en `users.wal` la operación completa: tipo, offset y las
+   imágenes del registro *antes* y *después* (con su CRC32C).
+2. **Aplicar:** se escribe el registro en `users.dat` y se ajustan las claves del índice.
+3. **Borrar la anotación:** la operación quedó completa.
+4. **Al arrancar** (`recoverPending`): si hay una anotación válida sin borrar, se **rehace**.
+
+Rehacer es seguro porque aplicar es **idempotente**: el registro se escribe por su offset (o se agrega solo
+si aún no está), y cada clave se "asegura" (se crea o se corrige) o se "suelta" solo si todavía apunta a este
+registro. Repetir la operación, o haber hecho la mitad, da el mismo resultado final.
+
+| Cae después de… | Estado en disco | Al arrancar |
+|---|---|---|
+| anotar | nada aplicado | se aplica completa |
+| escribir el registro | registro sin índice (o índice parcial) | se completan las claves, sin duplicar el registro |
+| mover/borrar claves | claves listas, registro viejo | se escribe el registro final |
+| aplicar todo, antes de borrar la anotación | todo aplicado | se repite sin efecto y se borra |
+| anotar a medias (checksum inválido) | nada aplicado | la anotación se descarta: la operación no empezó |
+
+Decisiones:
+- **Una sola ranura**, no un log que crece. Las escrituras ya están serializadas (`LockedUserRepository`),
+  así que hay a lo sumo una operación en curso. Es más simple y no necesita compactarse.
+- **Imágenes completas** del registro, no "instrucciones": rehacer deja bytes idénticos y no depende del
+  estado en que quedaron los archivos.
+- Si aplicar falla (disco lleno, error de E/S), la anotación sigue pendiente y el repositorio **se niega a
+  aceptar nuevas escrituras** hasta reiniciar y recuperar: anotar otra sobrescribiría la pendiente y se perdería.
+- Orden de arranque: primero `ensureUserIndex` (reconstruye si el índice no coincide con `users.dat`),
+  después `recoverPending`. Así también se cierra el caso "el borrado a medias resucita al usuario": la
+  reconstrucción lo vuelve a indexar y el WAL lo elimina.
+- **Límite:** el WAL se vacía al sistema operativo (`flush`) pero no se fuerza a disco (`fsync`), porque
+  `std::fstream` no lo ofrece. Protege ante la caída del proceso (kill, excepción, reinicio del contenedor);
+  no ante un corte de energía justo en ese instante. Cerrarlo exigiría llamadas propias de cada sistema operativo.
+- No cubre `reservations.dat`: sus operaciones son idempotentes por `reservationId` y el barrido las corrige.
+
 ## Pendiente
-Recorrido por prefijo (para `GET /users?username=`), bloques y lista de espacio libre, concurrencia
-(`shared_mutex` + bloqueo de archivo), WAL.
+Recorrido por prefijo (para `GET /users?username=`), bloques y lista de espacio libre, concurrencia con
+bloqueo de archivo del sistema operativo (hoy: un mutex dentro del proceso).

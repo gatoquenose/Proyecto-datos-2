@@ -7,6 +7,7 @@
 
 #include "domain/User.hpp"
 #include "storage/FixedRecordFile.hpp"
+#include "storage/UserRecordCodec.hpp"
 
 namespace tecflix::users {
 
@@ -47,6 +48,14 @@ public:
     void scan(const std::function<void(const ScannedRecord&)>& visit) const;
 
     [[nodiscard]] std::uint64_t recordCount() const;
+
+    // Acceso a los bytes del registro tal cual, sin interpretarlos. Lo usa el repositorio para
+    // anotar y rehacer operaciones en el WAL: rehacer debe dejar bytes idénticos, no "equivalentes".
+    // Offset donde se agregaría el próximo registro.
+    [[nodiscard]] std::uint64_t nextOffset() const;
+    [[nodiscard]] RecordBuffer readImage(std::uint64_t offset) const;
+    void appendImage(const RecordBuffer& image);
+    void writeImage(std::uint64_t offset, const RecordBuffer& image);
 
 private:
     FixedRecordFile file_;

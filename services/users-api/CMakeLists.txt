@@ -54,6 +54,8 @@ add_library(users_core STATIC
     src/util/Crc32c.cpp
     src/storage/Checksum.cpp
     src/storage/IndexRebuilder.cpp
+    src/storage/FileWriteAheadLog.cpp
+    src/storage/MemoryWriteAheadLog.cpp
     src/storage/FileReservationRepository.cpp
     src/storage/FileUserRepository.cpp
     src/storage/FixedRecordFile.cpp
@@ -90,6 +92,8 @@ add_executable(users_tests
     tests/Crc32cTest.cpp
     tests/ChecksumTest.cpp
     tests/IndexRebuilderTest.cpp
+    tests/WriteAheadLogTest.cpp
+    tests/WalRecoveryTest.cpp
 )
 target_link_libraries(users_tests PRIVATE users_core GTest::gtest GTest::gtest_main)
 target_compile_options(users_tests PRIVATE ${TECFLIX_WARNINGS})
