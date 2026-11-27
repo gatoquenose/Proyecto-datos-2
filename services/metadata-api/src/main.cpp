@@ -22,15 +22,21 @@ int main() {
         // Inicializar el driver de MongoDB
         mongocxx::instance instancia{};
 
+        // Obtener la direccion de MongoDB
+        const char* mongoUri = std::getenv("MONGO_URI");
+
         // Crear la conexion con MongoDB
         mongocxx::client cliente{
-            mongocxx::uri{"mongodb://127.0.0.1:27017"}
+            mongocxx::uri{
+                (mongoUri && *mongoUri)
+                    ? mongoUri
+                    : "mongodb://127.0.0.1:27017"
+            }
         };
 
         // Seleccionar la base de datos Tecflix
         auto baseDatos = cliente["tecflix"];
 
-        
         try {
             tecflix::metadata::ensure_indexes(baseDatos);
             std::cout << "Indices de MongoDB preparados correctamente\n";
