@@ -93,6 +93,53 @@ int main() {
         auto handler = [&baseDatos, &verificador](const auto& request) {
             using namespace tecflix;
 
+            if (request.method() == http::verb::get &&
+            (request.target() == "/api/v1/health" ||
+            request.target() == "/health" ||
+            request.target() == "/api/v1/ready" ||
+            request.target() == "/ready")) {
+
+            http::response<http::string_body> response{
+                http::status::ok,
+                request.version()
+            };
+
+            response.set(http::field::content_type,
+                        "application/json");
+
+            response.keep_alive(request.keep_alive());
+
+            if (request.target() == "/api/v1/health" ||
+                request.target() == "/health") {
+
+                response.body() = R"({"status":"ok"})";
+
+            } else {
+                try {
+                    auto ping = bsoncxx::builder::basic::make_document(
+                        bsoncxx::builder::basic::kvp("ping", 1)
+                    );
+
+                    baseDatos.run_command(ping.view());
+
+                    response.body() = R"({"status":"ready"})";
+
+                } catch (const std::exception&) {
+                    response.result(http::status::service_unavailable);
+
+                    response.body() = R"({
+                        "code":"SERVICE_UNAVAILABLE",
+                        "message":"MongoDB no disponible",
+                        "details":{},
+                        "traceId":""
+                    })";
+                }
+            }
+
+            response.prepare_payload();
+            return response;
+        }
+
             if (auto extra = tecflix::metadata::handle_extra_routes(
                     request, baseDatos, verificador)) {
                 return std::move(*extra);
