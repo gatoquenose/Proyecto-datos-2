@@ -94,6 +94,9 @@ add_executable(users_tests
     tests/IndexRebuilderTest.cpp
     tests/WriteAheadLogTest.cpp
     tests/WalRecoveryTest.cpp
+    tests/CorsTest.cpp
+    tests/ServerSetupTest.cpp
+    tests/ProcessEnvironmentTest.cpp
 )
 target_link_libraries(users_tests PRIVATE users_core GTest::gtest GTest::gtest_main)
 target_compile_options(users_tests PRIVATE ${TECFLIX_WARNINGS})
