@@ -148,10 +148,10 @@ void InternalQuotaController::reserve(const httplib::Request& request, httplib::
     const ReserveOutcome outcome = quota_.reserve({reservationId, userId, bytes->get<std::uint64_t>(), expiresAt});
     switch (outcome.status) {
         case ReserveStatus::Created:
-            sendJson(response, http_status::kCreated, reservationJson(outcome.reservation));
-            return;
         case ReserveStatus::AlreadyReserved:
-            sendJson(response, http_status::kOk, reservationJson(outcome.reservation));
+            // users.yaml documenta solo 201 para esta operación: repetir la misma petición (idempotente)
+            // devuelve la misma reserva con el mismo código.
+            sendJson(response, http_status::kCreated, reservationJson(outcome.reservation));
             return;
         case ReserveStatus::UserNotFound:
             sendError(response, http_status::kNotFound, "NOT_FOUND", "No existe ese usuario", traceId);

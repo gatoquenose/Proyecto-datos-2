@@ -72,7 +72,7 @@ TEST_F(InternalQuotaControllerTest, ReserveIsIdempotent) {
 
     const Reply again = reserve(kReservationId, alice.id, 1000);
 
-    EXPECT_EQ(again.status, 200);
+    EXPECT_EQ(again.status, 201);  // users.yaml solo documenta 201 para reservar
     EXPECT_EQ(again.body["status"], "active");
     EXPECT_EQ(usedBy(alice), 1000U);
     EXPECT_EQ(reserve(kReservationId, alice.id, 2000).status, 409);
