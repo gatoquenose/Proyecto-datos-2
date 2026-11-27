@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
         const HealthController health{[&repository] {
             static_cast<void>(repository.findById(kReadinessProbeId));
             return true;
-        }};
+        }, traceIds};
         health.registerRoutes(server);
         TracedRouter router{server, httpMetrics, traceIds, config.serviceName};
         const UsersController users{service, verifier, traceIds, activity, config.jwtLifetime};

@@ -2,7 +2,9 @@
 
 #include <exception>
 #include <nlohmann/json.hpp>
+#include <string>
 #include <string_view>
+#include <utility>
 
 #include "api/ApiResponses.hpp"
 #include "api/HttpStatus.hpp"
@@ -19,6 +21,9 @@ constexpr std::string_view kReadyPath = "/api/v1/ready";
 HealthController::HealthController() : readinessCheck_([] { return true; }) {}
 
 HealthController::HealthController(ReadinessCheck readinessCheck) : readinessCheck_(std::move(readinessCheck)) {}
+
+HealthController::HealthController(ReadinessCheck readinessCheck, const IIdGenerator& traceIds)
+    : readinessCheck_(std::move(readinessCheck)), traceIds_(&traceIds) {}
 
 std::string HealthController::healthBody() {
     return nlohmann::json{{"status", "ok"}}.dump();
@@ -38,7 +43,8 @@ void HealthController::registerRoutes(httplib::Server& server) const {
         if (ready) {
             sendJson(response, http_status::kOk, nlohmann::json{{"status", "ready"}});
         } else {
-            sendError(response, http_status::kServiceUnavailable, "SERVICE_UNAVAILABLE", "El servicio no está listo", "");
+            sendError(response, http_status::kServiceUnavailable, "SERVICE_UNAVAILABLE", "El servicio no está listo",
+                      traceIds_ != nullptr ? traceIds_->next() : std::string{});
         }
     });
 }
