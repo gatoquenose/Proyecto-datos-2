@@ -338,7 +338,7 @@ int main() {
 
                                 for (const auto& tag : valorCampo) {
                                     if (!tag.is_string() ||
-                                        tag.get<std::string>().size() > 50) {
+                                        tag.template get<std::string>().size() > 50) {
                                         valido = false;
                                     }
                                 }
@@ -361,7 +361,7 @@ int main() {
                             }
 
                             if (!valorCampo.is_string() ||
-                                valorCampo.get<std::string>().size() > maximo ||
+                                valorCampo.template get<std::string>().size() > maximo ||
                                 (campo == "title" && valorCampo == "")) {
                                 valido = false;
                                 break;
