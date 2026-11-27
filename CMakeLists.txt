@@ -53,3 +53,9 @@ target_link_libraries(metadata-api PRIVATE
 )
 
 target_link_libraries(metadata-api PRIVATE tecflix_auth)
+
+if(NOT TARGET tecflix_telemetry)
+    add_subdirectory(services/common/telemetry)
+endif()
+
+target_link_libraries(metadata-api PRIVATE tecflix_telemetry)

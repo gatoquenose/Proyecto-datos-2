@@ -16,9 +16,32 @@
 #include <string_view>
 #include <nlohmann/json.hpp>
 #include "MetadataRoutes.hpp"
+#include <chrono>
+#include "tecflix/telemetry/TelemetrySetup.hpp"
+#include "tecflix/telemetry/OtelHttpServerMetrics.hpp"
+#include "tecflix/telemetry/ServerSpan.hpp"
 
 int main() {
     try {
+
+                const char* otlpEndpoint =
+            std::getenv("OTEL_EXPORTER_OTLP_ENDPOINT");
+
+        tecflix::telemetry::TelemetrySetup telemetry{{
+            "metadata-api",
+            "1.0.0",
+            otlpEndpoint ? otlpEndpoint : "",
+            std::chrono::milliseconds{15000},
+            {"http_request_duration_seconds",
+            "metadata_mongo_query_duration_seconds",
+            "metadata_video_list_duration_seconds"}
+        }};
+
+        const auto meter = telemetry.meter();
+
+        tecflix::telemetry::OtelHttpServerMetrics httpMetrics{
+            meter
+        };
         // Inicializar el driver de MongoDB
         mongocxx::instance instancia{};
 
@@ -418,10 +441,79 @@ int main() {
             return response_for(request);
         };
 
+                auto tracedHandler = [&](const auto& request) {
+            const auto start =
+                std::chrono::steady_clock::now();
+
+            const std::string method{
+                request.method_string().data(),
+                request.method_string().size()
+            };
+
+            const std::string target{
+                request.target().data(),
+                request.target().size()
+            };
+
+            const std::string path =
+                target.substr(0, target.find('?'));
+
+            std::string route = "unmatched";
+
+            if (path == "/health" ||
+                path == "/ready" ||
+                path == "/api/v1/videos") {
+                route = path;
+            } else if (path.starts_with("/api/v1/videos/")) {
+                route = path.ends_with("/visibility")
+                    ? "/api/v1/videos/{id}/visibility"
+                    : "/api/v1/videos/{id}";
+            } else if (
+                path.starts_with("/api/v1/internal/videos/")
+            ) {
+                route = "/api/v1/internal/videos/{id}";
+            }
+
+            tecflix::telemetry::ServerSpan span{
+                "metadata-api",
+                method,
+                route,
+                path,
+                [&request](std::string_view name) {
+                    const auto value = request[
+                        tecflix::beast::string_view{
+                            name.data(), name.size()
+                        }
+                    ];
+
+                    return std::string{
+                        value.data(), value.size()
+                    };
+                }
+            };
+
+            auto response = handler(request);
+
+            const int status = response.result_int();
+
+            const double duration =
+                std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - start
+                ).count();
+
+            span.finish(status);
+
+            httpMetrics.record(
+                method, route, status, duration
+            );
+
+            return response;
+        };
+
         return tecflix::run_http_service(
             "metadata-api",
             8082,
-            handler
+            tracedHandler
         );
 
     } catch (const std::exception& error) {
