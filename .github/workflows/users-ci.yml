@@ -65,6 +65,7 @@ jobs:
           --gcov-executable gcov-12
           --exclude-directories 'build/CMakeFiles'
           --gcov-ignore-errors=no_working_dir_found
+          --gcov-ignore-parse-errors=negative_hits.warn_once_per_file
           --merge-mode-functions=merge-use-line-min
           --filter 'services/users-api/src/'
           --filter 'services/common/auth/src/'
