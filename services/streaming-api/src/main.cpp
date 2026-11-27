@@ -1,4 +1,4 @@
-// Tecflix streaming-api — Fase E1: subida reanudable y cuotas.
+// Tecflix streaming-api â€” Fase E1: subida reanudable y cuotas.
 // Contratos: docs/openapi/streaming.yaml y docs/openapi/users.yaml.
 // Pendiente en E2: FFmpeg, MPEG-DASH, miniaturas, confirmaciones internas de metadata.
 #include <httplib.h>
@@ -346,15 +346,7 @@ private:
                 "GET, POST, PUT, DELETE, OPTIONS");
             res.set_header("Access-Control-Expose-Headers",
                 "Accept-Ranges, Content-Range, Content-Length");
-        }
     }
-        if (req.get_header_value("Origin") == frontendOrigin_) {
-            res.set_header("Access-Control-Allow-Origin", frontendOrigin_);
-            res.set_header("Vary", "Origin");
-            res.set_header("Access-Control-Allow-Headers", "Authorization, Range, Content-Type");
-            res.set_header("Access-Control-Allow-Methods", "GET, OPTIONS");
-            res.set_header("Access-Control-Expose-Headers", "Accept-Ranges, Content-Range, Content-Length");
-        }
     }
     bool notifyMetadata(const Upload& u, bool success, int duration, std::uint64_t bytes,
                         const std::string& reason = "") {
@@ -738,6 +730,7 @@ private:
         } catch (const std::exception&) {
             fail(res, 500, "INTERNAL_ERROR", "Error al limpiar archivos");
         }
+    }
     void complete(const httplib::Request& req, httplib::Response& res) {
         const auto claims = user(req, res);
         if (!claims) return;

@@ -36,8 +36,8 @@ services:
     ports: ["8083:8080"]
 
   otel-collector:
-    image: otel/opentelemetry-collector:0.109.0
-    volumes: ["./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro"]
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    volumes: ["./observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro"]
 
   prometheus:
     image: prom/prometheus:v2.54.1
