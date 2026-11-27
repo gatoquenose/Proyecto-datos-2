@@ -43,7 +43,7 @@ if(NOT TARGET tecflix_auth)
 endif()
 
 # Temporal: metadata-api y streaming-api siguen usando el helper compartido
-# hasta que sus responsables construyan su versi├│n.
+# hasta que sus responsables construyan su version.
 add_tecflix_service(metadata-api)
 add_tecflix_service(streaming-api)
 find_package(bsoncxx CONFIG REQUIRED)
@@ -53,9 +53,11 @@ target_sources(metadata-api PRIVATE
     services/metadata-api/src/VideoRepository.cpp
 )
 
+# CAMBIO: en Linux (triplete estatico) existen los targets _static;
+# en Windows (dinamico) existen los _shared. Esto funciona en ambos.
 target_link_libraries(metadata-api PRIVATE
-    mongo::bsoncxx_shared
-    mongo::mongocxx_shared
+    $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
+    $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
 )
 
 target_link_libraries(metadata-api PRIVATE tecflix_auth)

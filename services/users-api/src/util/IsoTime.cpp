@@ -3,7 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <format>
+#include <cstdio>
+#include <string>
 
 namespace tecflix::users {
 
@@ -53,9 +54,12 @@ std::string formatIsoUtc(std::int64_t epochSeconds) {
     const auto day = std::chrono::floor<days>(moment);
     const std::chrono::year_month_day date{day};
     const std::chrono::hh_mm_ss time{moment - day};
-    return std::format("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", static_cast<int>(date.year()),
-                       static_cast<unsigned>(date.month()), static_cast<unsigned>(date.day()), time.hours().count(),
-                       time.minutes().count(), time.seconds().count());
+    std::array<char, kLength + 1> buffer{};
+    std::snprintf(buffer.data(), buffer.size(), "%04d-%02u-%02uT%02d:%02d:%02dZ",
+                  static_cast<int>(date.year()), static_cast<unsigned>(date.month()),
+                  static_cast<unsigned>(date.day()), static_cast<int>(time.hours().count()),
+                  static_cast<int>(time.minutes().count()), static_cast<int>(time.seconds().count()));
+    return std::string{buffer.data()};
 }
 
 std::optional<std::int64_t> parseIsoUtc(std::string_view text) {

@@ -1,23 +1,58 @@
 services:
   users-api:
-    build: .
-    command: ["./build/users-api"]
+    build: { context: ., target: users-api }
+    env_file: .env
+    environment:
+      USERS_DATA_DIR: /data/users
+    volumes: ["users-data:/data/users"]
     ports: ["8081:8080"]
+
   metadata-api:
-    build: .
-    command: ["./build/metadata-api"]
-    ports: ["8082:8080"]
+    build: { context: ., target: metadata-api }
+    env_file: .env
+    environment:
+      USERS_API_HOST: users-api
+      STREAMING_API_HOST: streaming-api
+    restart: on-failure
+    depends_on: [users-api]
+    ports: ["8082:8082"]
+
+  # Metadata tiene la conexión a Mongo fija en 127.0.0.1. Mientras no se
+  # corrija en el código, Mongo comparte la red de metadata-api.
+  mongo:
+    image: mongo:7
+    network_mode: "service:metadata-api"
+    volumes: ["mongo-data:/data/db"]
+
   streaming-api:
-    build: .
-    command: ["./build/streaming-api"]
+    build: { context: ., target: streaming-api }
+    env_file: .env
+    environment:
+      USERS_API_HOST: users-api
+      METADATA_API_HOST: metadata-api
+      METADATA_API_PORT: "8082"
+      STREAMING_BIND_HOST: 0.0.0.0
+      STREAMING_DATA_DIR: /data/streaming
+      FRONTEND_ORIGIN: http://localhost:5173
+    volumes: ["streaming-data:/data/streaming"]
+    depends_on: [users-api, metadata-api]
     ports: ["8083:8080"]
+
   otel-collector:
     image: otel/opentelemetry-collector:0.109.0
     volumes: ["./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro"]
+
   prometheus:
     image: prom/prometheus:v2.54.1
     volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+
   grafana:
     image: grafana/grafana:11.2.0
     ports: ["3000:3000"]
     volumes: ["./observability/grafana:/etc/grafana/provisioning:ro"]
+
+volumes:
+  mongo-data:
+  users-data:
+  streaming-data:
