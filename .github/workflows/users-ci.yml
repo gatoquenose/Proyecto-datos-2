@@ -62,6 +62,10 @@ jobs:
       - name: Cobertura (mínimo 90%)
         run: >
           gcovr -r . build
+          --gcov-executable gcov-12
+          --exclude-directories 'build/CMakeFiles'
+          --gcov-ignore-errors=no_working_dir_found
+          --merge-mode-functions=merge-use-line-min
           --filter 'services/users-api/src/'
           --filter 'services/common/auth/src/'
           --filter 'services/common/telemetry/src/'
