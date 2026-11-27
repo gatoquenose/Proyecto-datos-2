@@ -507,7 +507,7 @@ inline Response delete_video(const Request& request, mongocxx::database& db,
     const auto now = now_utc();
     if (!wasPending) {
         auto liveFilter = b::make_document(b::kvp("_id", id), b::kvp("ownerId", claims.subject),
-                                          b::kvp("deletedAt", bsoncxx::types::b_null{}));
+                                        b::kvp("deletedAt", bsoncxx::types::b_null{}));
         auto update = b::make_document(b::kvp("$set", b::make_document(
             b::kvp("deletedAt", now), b::kvp("deletionStatus", "pending_streaming_deletion"),
             b::kvp("updatedAt", now))));
@@ -532,23 +532,51 @@ inline Response delete_video(const Request& request, mongocxx::database& db,
     }
     if (code && *code == 409)
         return error(request, http::status::conflict, "INVALID_STATE",
-                     "Hay una subida activa; cancelala antes de eliminar el video");
+                    "Hay una subida activa; cancelala antes de eliminar el video");
     return error(request, http::status::bad_gateway, "DEPENDENCY_ERROR",
-                 "Streaming no confirmo el borrado; reintenta DELETE con el mismo videoId");
+                "Streaming no confirmo el borrado; reintenta DELETE con el mismo videoId");
 }
 
 }  // namespace detail
 
 // Ejecutar al iniciar main(), luego de confirmar conexion a MongoDB.
 // MongoDB crea los indices solo si no existen; los siguientes arranques reutilizan su definicion.
-inline void ensure_indexes(mongocxx::database& /*db*/) {
+inline void ensure_indexes(mongocxx::database& db) {
+    namespace b = bsoncxx::builder::basic;
+
+    b::array indexes;
+
+    for (const std::string scope : {"ownerId", "visibility"}) {
+        for (const std::string field : {
+            "title", "ownerUsername", "uploadedAt"
+        }) {
+            indexes.append(b::make_document(
+                b::kvp("key", b::make_document(
+                    b::kvp(scope, 1),
+                    b::kvp(field, 1),
+                    b::kvp("_id", 1)
+                )),
+                b::kvp("name", "idx_" + scope + "_" + field),
+                b::kvp("collation", b::make_document(
+                    b::kvp("locale", "en"),
+                    b::kvp("strength", 2)
+                ))
+            ));
+        }
+    }
+
+    auto command = b::make_document(
+        b::kvp("createIndexes", "videos"),
+        b::kvp("indexes", indexes.extract())
+    );
+
+    db.run_command(command.view());
+}
     // La creacion de indices NO debe ejecutarse mientras diagnosticamos
     // el abort() nativo que surgio al incorporar el inicio de metadata.
     // Las rutas siguen funcionando sin indices, aunque las consultas
     // pueden ser mas lentas con colecciones grandes.
     // Cuando se confirme el arranque, migraremos los indices por separado.
-}
-
 
 // Devuelve nullopt para rutas que NO atiende este modulo (ej. /health).
 // Agregar esta llamada al comienzo del handler HTTP existente para evitar colisiones.
