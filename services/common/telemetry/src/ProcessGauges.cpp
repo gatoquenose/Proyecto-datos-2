@@ -7,9 +7,11 @@ std::unique_ptr<ProcessSampler> registerProcessGauges(GaugeRegistry& registry, c
     ProcessSampler* process = sampler.get();
     registry.addDecimal("service_cpu_usage", "CPU que usa el servicio, en núcleos", "{core}",
                         [process] { return process->cpuCores(); });
-    registry.addInteger("service_memory_usage", "Memoria física que usa el servicio", "By",
+    // Sin unidad en estos dos: con "By", Prometheus les agrega "_bytes" y dejan de llamarse como pide la SPEC.
+    // La unidad (bytes) queda en la descripción.
+    registry.addInteger("service_memory_usage", "Memoria física que usa el servicio, en bytes", "",
                         [process] { return process->memoryBytes(); });
-    registry.addInteger("service_disk_usage", "Espacio que ocupan los archivos de datos del servicio", "By",
+    registry.addInteger("service_disk_usage", "Espacio que ocupan los archivos de datos del servicio, en bytes", "",
                         [dataDirectory] { return directorySizeBytes(dataDirectory); });
     return sampler;
 }
