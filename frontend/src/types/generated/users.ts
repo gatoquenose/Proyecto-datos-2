@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Buscar usuarios por username o email */
+        /**
+         * Buscar usuarios por username o email
+         * @description El filtro username es público (solo devuelve id y username). El filtro email solo coincide con el email del propio usuario autenticado; para el email de otra persona devuelve una lista vacía, para no exponer correos.
+         */
         get: operations["listUsers"];
         put?: never;
         /** Registrar usuario */
@@ -53,7 +56,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Actualizar email del usuario autenticado */
+        patch: operations["updateCurrentUser"];
         trace?: never;
     };
     "/users/me/quota": {
@@ -86,11 +90,11 @@ export interface paths {
         get: operations["getUser"];
         put?: never;
         post?: never;
-        /** Eliminar usuario */
+        /** Eliminar usuario propio */
         delete: operations["deleteUser"];
         options?: never;
         head?: never;
-        /** Actualizar usuario; username y cuota no son editables */
+        /** Actualizar usuario propio; username y cuota no son editables */
         patch: operations["updateUser"];
         trace?: never;
     };
@@ -103,7 +107,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Crear reserva idempotente de cuota */
+        /**
+         * Crear reserva idempotente de cuota
+         * @description Idempotente por reservationId: repetir la misma petición devuelve la reserva existente (200). Reutilizar un reservationId con datos distintos devuelve 409.
+         */
         post: operations["reserveQuota"];
         delete?: never;
         options?: never;
@@ -120,7 +127,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Ajustar una reserva al tamaño final */
+        /**
+         * Ajustar una reserva al tamaño final
+         * @description Solo aplica a reservas activas. Libera la diferencia entre lo reservado y finalBytes.
+         */
         post: operations["settleQuotaReservation"];
         delete?: never;
         options?: never;
@@ -137,7 +147,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Liberar reserva */
+        /**
+         * Liberar reserva
+         * @description Funciona sobre reservas activas (subida cancelada o fallida) y sobre reservas settled (video publicado que se elimina): en ambos casos devuelve los bytes a la cuota del usuario. Es idempotente: liberar una reserva ya liberada devuelve 204.
+         */
         post: operations["releaseQuotaReservation"];
         delete?: never;
         options?: never;
@@ -152,7 +165,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Consultar estado de salud */
+        /** Comprobar que el servicio está vivo */
         get: operations["getHealth"];
         put?: never;
         post?: never;
@@ -169,7 +182,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Consultar disponibilidad del servicio */
+        /** Comprobar que el servicio está listo (archivo de usuarios, disco) */
         get: operations["getReady"];
         put?: never;
         post?: never;
@@ -183,13 +196,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * @example {
-         *       "username": "ana.tec",
-         *       "email": "ana@example.test",
-         *       "password": "CorrectHorseBatteryStaple!"
-         *     }
-         */
         CreateUserRequest: {
             username: string;
             /** Format: email */
@@ -197,12 +203,6 @@ export interface components {
             /** Format: password */
             password: string;
         };
-        /**
-         * @example {
-         *       "username": "ana.tec",
-         *       "password": "CorrectHorseBatteryStaple!"
-         *     }
-         */
         LoginRequest: {
             username: string;
             /** Format: password */
@@ -212,12 +212,6 @@ export interface components {
             /** Format: email */
             email?: string;
         };
-        /**
-         * @example {
-         *       "id": "550e8400-e29b-41d4-a716-446655440000",
-         *       "username": "ana.tec"
-         *     }
-         */
         User: {
             /** Format: uuid */
             id: string;
@@ -231,20 +225,6 @@ export interface components {
             /** Format: int64 */
             readonly usedBytes: number;
         };
-        /**
-         * @example {
-         *       "accessToken": "eyJhbGciOiJIUzI1NiJ9.example.signature",
-         *       "tokenType": "Bearer",
-         *       "expiresIn": 3600,
-         *       "user": {
-         *         "id": "550e8400-e29b-41d4-a716-446655440000",
-         *         "username": "ana.tec",
-         *         "email": "ana@example.test",
-         *         "quotaBytes": 5368709120,
-         *         "usedBytes": 0
-         *       }
-         *     }
-         */
         LoginResponse: {
             accessToken: string;
             /** @enum {string} */
@@ -256,13 +236,6 @@ export interface components {
             expiresIn: number;
             user: components["schemas"]["Me"];
         };
-        /**
-         * @example {
-         *       "quotaBytes": 5368709120,
-         *       "usedBytes": 1048576,
-         *       "remainingBytes": 5367660544
-         *     }
-         */
         Quota: {
             /** Format: int64 */
             readonly quotaBytes: number;
@@ -271,30 +244,10 @@ export interface components {
             /** Format: int64 */
             readonly remainingBytes: number;
         };
-        /**
-         * @example {
-         *       "items": [
-         *         {
-         *           "id": "550e8400-e29b-41d4-a716-446655440000",
-         *           "username": "ana.tec"
-         *         }
-         *       ],
-         *       "nextCursor": "opaque-cursor"
-         *     }
-         */
         UserPage: {
             items: components["schemas"]["User"][];
             nextCursor: string | null;
         };
-        /**
-         * @description Repetir la reserva con el mismo reservationId devuelve la reserva existente sin volver a consumir cuota; cambiar sus datos produce CONFLICT.
-         * @example {
-         *       "reservationId": "650e8400-e29b-41d4-a716-446655440000",
-         *       "userId": "550e8400-e29b-41d4-a716-446655440000",
-         *       "bytes": 1073741824,
-         *       "expiresAt": "2026-10-20T05:00:00Z"
-         *     }
-         */
         ReservationRequest: {
             /** Format: uuid */
             reservationId: string;
@@ -311,23 +264,10 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
-        /**
-         * @example {
-         *       "code": "VALIDATION_ERROR",
-         *       "message": "Datos inválidos",
-         *       "details": {
-         *         "field": "email"
-         *       },
-         *       "traceId": "01HZX3Y7J8K9M0N1P2Q3R4S5T6"
-         *     }
-         */
         ApiError: {
-            /** @enum {string} */
-            code: "VALIDATION_ERROR" | "INVALID_CURSOR" | "MISSING_TOKEN" | "INVALID_TOKEN" | "TOKEN_EXPIRED" | "INVALID_CREDENTIALS" | "FORBIDDEN" | "QUOTA_EXCEEDED" | "NOT_FOUND" | "CONFLICT" | "USERNAME_EXISTS" | "EMAIL_EXISTS" | "INVALID_STATE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "UNPROCESSABLE_ENTITY" | "INTERNAL_ERROR" | "DEPENDENCY_ERROR" | "SERVICE_UNAVAILABLE";
+            code: string;
             message: string;
-            details: {
-                [key: string]: unknown;
-            } | null;
+            details: unknown;
             traceId: string;
         };
     };
@@ -341,29 +281,12 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description Token ausente, inválido o expirado. */
+        /** @description Token ausente */
         UnauthorizedError: {
             headers: {
                 [name: string]: unknown;
             };
             content: {
-                "application/json": components["schemas"]["ApiError"];
-            };
-        };
-        /** @description Credenciales incorrectas; el mensaje no revela si el usuario existe. */
-        InvalidCredentialsError: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "code": "INVALID_CREDENTIALS",
-                 *       "message": "Usuario o contraseña incorrectos.",
-                 *       "details": null,
-                 *       "traceId": "01HZX3Y7J8K9M0N1P2Q3R4S5T6"
-                 *     }
-                 */
                 "application/json": components["schemas"]["ApiError"];
             };
         };
@@ -376,7 +299,16 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description Conflicto */
+        /** @description Cuota insuficiente (código QUOTA_EXCEEDED) */
+        QuotaExceededError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+        /** @description Conflicto (USERNAME_EXISTS */
         ConflictError: {
             headers: {
                 [name: string]: unknown;
@@ -505,7 +437,8 @@ export interface operations {
                     "application/json": components["schemas"]["LoginResponse"];
                 };
             };
-            401: components["responses"]["InvalidCredentialsError"];
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["UnauthorizedError"];
         };
     };
     getCurrentUser: {
@@ -527,6 +460,33 @@ export interface operations {
                 };
             };
             401: components["responses"]["UnauthorizedError"];
+        };
+    };
+    updateCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Usuario actualizado */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["UnauthorizedError"];
+            409: components["responses"]["ConflictError"];
         };
     };
     getMyQuota: {
@@ -561,13 +521,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Usuario visible según privacidad */
+            /** @description Si {id} es el del usuario autenticado devuelve Me (con email y cuota). Si es de otra persona devuelve solo User (id y username). */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["User"];
+                    "application/json": components["schemas"]["Me"] | components["schemas"]["User"];
                 };
             };
             401: components["responses"]["UnauthorizedError"];
@@ -624,6 +584,7 @@ export interface operations {
             400: components["responses"]["ValidationError"];
             401: components["responses"]["UnauthorizedError"];
             403: components["responses"]["ForbiddenError"];
+            404: components["responses"]["NotFoundError"];
             409: components["responses"]["ConflictError"];
         };
     };
@@ -640,6 +601,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description La reserva ya existía con los mismos datos */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation"];
+                };
+            };
             /** @description Reserva creada */
             201: {
                 headers: {
@@ -649,6 +619,10 @@ export interface operations {
                     "application/json": components["schemas"]["Reservation"];
                 };
             };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["UnauthorizedError"];
+            403: components["responses"]["QuotaExceededError"];
+            404: components["responses"]["NotFoundError"];
             409: components["responses"]["ConflictError"];
         };
     };
@@ -679,7 +653,11 @@ export interface operations {
                     "application/json": components["schemas"]["Reservation"];
                 };
             };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["UnauthorizedError"];
+            403: components["responses"]["QuotaExceededError"];
             404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
         };
     };
     releaseQuotaReservation: {
@@ -700,6 +678,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["UnauthorizedError"];
             404: components["responses"]["NotFoundError"];
         };
     };

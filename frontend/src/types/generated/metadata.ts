@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Listar videos públicos y propios con orden y cursor en MongoDB */
+        /**
+         * Listar videos públicos y propios con orden y cursor en MongoDB
+         * @description Devuelve los videos del usuario autenticado más los públicos de otros usuarios. El orden por author usa ownerUsername. Un cursor mal formado devuelve 400 INVALID_CURSOR.
+         */
         get: operations["listVideos"];
         put?: never;
         /** Crear metadata de video */
@@ -31,11 +34,17 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Consultar video */
+        /**
+         * Consultar video
+         * @description Un video privado solo lo puede consultar su dueño; para otros usuarios devuelve 403.
+         */
         get: operations["getVideo"];
         put?: never;
         post?: never;
-        /** Eliminar video del dueño y coordinar borrado físico */
+        /**
+         * Eliminar video del dueño y coordinar borrado físico
+         * @description Flujo: (1) marca el video como eliminado (deletedAt); (2) pide a streaming borrar los archivos (DELETE /internal/videos/{videoId} en streaming); si streaming no responde, revierte la marca y devuelve 502; (3) responde 204. Cuando streaming termina el borrado físico llama a streaming-deleted y entonces metadata elimina el documento y libera la cuota (release del reservationId = id en la API de usuarios). Si el video tiene una subida activa devuelve 409 INVALID_STATE; el dueño debe cancelar la subida primero.
+         */
         delete: operations["deleteVideo"];
         options?: never;
         head?: never;
@@ -73,8 +82,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Notificar procesamiento exitoso */
-        post: operations["notifyProcessingComplete"];
+        /**
+         * Notificar procesamiento exitoso
+         * @description Pasa el video a ready y guarda la duración. Idempotente si ya estaba ready con los mismos datos.
+         */
+        post: operations["markProcessingComplete"];
         delete?: never;
         options?: never;
         head?: never;
@@ -93,7 +105,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Notificar fallo de procesamiento */
-        post: operations["notifyProcessingFailed"];
+        post: operations["markProcessingFailed"];
         delete?: never;
         options?: never;
         head?: never;
@@ -111,8 +123,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Confirmar borrado físico en streaming */
-        post: operations["notifyStreamingDeleted"];
+        /**
+         * Confirmar borrado físico en streaming
+         * @description Elimina el documento del video y libera la cuota del dueño. Idempotente.
+         */
+        post: operations["confirmStreamingDeleted"];
         delete?: never;
         options?: never;
         head?: never;
@@ -126,7 +141,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Consultar estado de salud */
+        /** Comprobar que el servicio está vivo */
         get: operations["getHealth"];
         put?: never;
         post?: never;
@@ -143,7 +158,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Consultar disponibilidad del servicio */
+        /** Comprobar que el servicio está listo (MongoDB) */
         get: operations["getReady"];
         put?: never;
         post?: never;
@@ -161,21 +176,6 @@ export interface components {
         Visibility: "public" | "private";
         /** @enum {string} */
         VideoStatus: "processing" | "ready" | "failed";
-        /**
-         * @example {
-         *       "title": "Introducción a algoritmos",
-         *       "description": "Curso de estructuras de datos",
-         *       "author": "Ana TEC",
-         *       "topic": "Algoritmos",
-         *       "tags": [
-         *         "árboles",
-         *         "grafos"
-         *       ],
-         *       "uploadedAt": "2026-10-19T22:00:00Z",
-         *       "visibility": "private",
-         *       "sizeBytes": 104857600
-         *     }
-         */
         CreateVideoRequest: {
             title: string;
             description: string;
@@ -197,28 +197,6 @@ export interface components {
             /** Format: date-time */
             uploadedAt?: string;
         };
-        /**
-         * @example {
-         *       "id": "550e8400-e29b-41d4-a716-446655440000",
-         *       "ownerId": "650e8400-e29b-41d4-a716-446655440000",
-         *       "ownerUsername": "ana.tec",
-         *       "title": "Introducción a algoritmos",
-         *       "description": "Curso de estructuras de datos",
-         *       "author": "Ana TEC",
-         *       "topic": "Algoritmos",
-         *       "tags": [
-         *         "árboles",
-         *         "grafos"
-         *       ],
-         *       "durationSeconds": 240,
-         *       "uploadedAt": "2026-10-19T22:00:00Z",
-         *       "visibility": "private",
-         *       "sizeBytes": 104857600,
-         *       "status": "ready",
-         *       "createdAt": "2026-10-19T21:55:00Z",
-         *       "updatedAt": "2026-10-19T22:05:00Z"
-         *     }
-         */
         Video: {
             /** Format: uuid */
             readonly id: string;
@@ -242,33 +220,6 @@ export interface components {
             /** Format: date-time */
             readonly updatedAt: string;
         };
-        /**
-         * @example {
-         *       "items": [
-         *         {
-         *           "id": "550e8400-e29b-41d4-a716-446655440000",
-         *           "ownerId": "650e8400-e29b-41d4-a716-446655440000",
-         *           "ownerUsername": "ana.tec",
-         *           "title": "Introducción a algoritmos",
-         *           "description": "Curso de estructuras de datos",
-         *           "author": "Ana TEC",
-         *           "topic": "Algoritmos",
-         *           "tags": [
-         *             "árboles",
-         *             "grafos"
-         *           ],
-         *           "durationSeconds": 240,
-         *           "uploadedAt": "2026-10-19T22:00:00Z",
-         *           "visibility": "private",
-         *           "sizeBytes": 104857600,
-         *           "status": "ready",
-         *           "createdAt": "2026-10-19T21:55:00Z",
-         *           "updatedAt": "2026-10-19T22:05:00Z"
-         *         }
-         *       ],
-         *       "nextCursor": "opaque-cursor"
-         *     }
-         */
         VideoPage: {
             items: components["schemas"]["Video"][];
             nextCursor: string | null;
@@ -281,26 +232,15 @@ export interface components {
         ProcessingFailedRequest: {
             reason: string;
         };
-        /**
-         * @example {
-         *       "code": "NOT_FOUND",
-         *       "message": "Video no encontrado",
-         *       "details": {},
-         *       "traceId": "01HZX3Y7J8K9M0N1P2Q3R4S5T6"
-         *     }
-         */
         ApiError: {
-            /** @enum {string} */
-            code: "VALIDATION_ERROR" | "INVALID_CURSOR" | "MISSING_TOKEN" | "INVALID_TOKEN" | "TOKEN_EXPIRED" | "FORBIDDEN" | "QUOTA_EXCEEDED" | "NOT_FOUND" | "CONFLICT" | "USERNAME_EXISTS" | "EMAIL_EXISTS" | "INVALID_STATE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "UNPROCESSABLE_ENTITY" | "INTERNAL_ERROR" | "DEPENDENCY_ERROR" | "SERVICE_UNAVAILABLE";
+            code: string;
             message: string;
-            details: {
-                [key: string]: unknown;
-            } | null;
+            details: unknown;
             traceId: string;
         };
     };
     responses: {
-        /** @description Validación fallida */
+        /** @description Validación fallida (VALIDATION_ERROR o INVALID_CURSOR) */
         ValidationError: {
             headers: {
                 [name: string]: unknown;
@@ -309,7 +249,7 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description Autenticación requerida */
+        /** @description Token ausente */
         UnauthorizedError: {
             headers: {
                 [name: string]: unknown;
@@ -336,6 +276,24 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
+        /** @description Estado conflictivo (INVALID_STATE) */
+        ConflictError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+        /** @description Otro servicio no respondió (DEPENDENCY_ERROR) */
+        DependencyError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
         /** @description Servicio no listo */
         ServiceUnavailableError: {
             headers: {
@@ -352,7 +310,8 @@ export interface components {
             };
             content: {
                 "application/json": {
-                    status: string;
+                    /** @enum {string} */
+                    status: "ok" | "ready";
                 };
             };
         };
@@ -448,6 +407,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["UnauthorizedError"];
+            403: components["responses"]["ForbiddenError"];
             404: components["responses"]["NotFoundError"];
         };
     };
@@ -462,7 +422,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Video eliminado */
+            /** @description Eliminación aceptada */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -472,6 +432,8 @@ export interface operations {
             401: components["responses"]["UnauthorizedError"];
             403: components["responses"]["ForbiddenError"];
             404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
+            502: components["responses"]["DependencyError"];
         };
     };
     updateVideo: {
@@ -530,12 +492,13 @@ export interface operations {
                     "application/json": components["schemas"]["Video"];
                 };
             };
+            400: components["responses"]["ValidationError"];
             401: components["responses"]["UnauthorizedError"];
             403: components["responses"]["ForbiddenError"];
             404: components["responses"]["NotFoundError"];
         };
     };
-    notifyProcessingComplete: {
+    markProcessingComplete: {
         parameters: {
             query?: never;
             header?: never;
@@ -557,10 +520,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["UnauthorizedError"];
             404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
         };
     };
-    notifyProcessingFailed: {
+    markProcessingFailed: {
         parameters: {
             query?: never;
             header?: never;
@@ -582,10 +548,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["UnauthorizedError"];
             404: components["responses"]["NotFoundError"];
+            409: components["responses"]["ConflictError"];
         };
     };
-    notifyStreamingDeleted: {
+    confirmStreamingDeleted: {
         parameters: {
             query?: never;
             header?: never;
@@ -603,7 +572,9 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["UnauthorizedError"];
             404: components["responses"]["NotFoundError"];
+            502: components["responses"]["DependencyError"];
         };
     };
     getHealth: {

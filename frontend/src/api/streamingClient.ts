@@ -2,7 +2,7 @@ import type { components } from "../types/generated/streaming";
 import { request } from "./httpClient";
 
 type StartUploadRequest = components["schemas"]["StartUploadRequest"];
-type StartUploadResponse = components["schemas"]["StartUploadResponse"];
+type StartUploadResponse = components["schemas"]["UploadStatus"];
 type UploadStatus = components["schemas"]["UploadStatus"];
 type CompleteUploadRequest = components["schemas"]["CompleteUploadRequest"];
 type ProcessingStatus = components["schemas"]["ProcessingStatus"];

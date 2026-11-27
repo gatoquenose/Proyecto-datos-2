@@ -15,7 +15,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Iniciar una subida reanudable */
+        /**
+         * Iniciar una subida reanudable
+         * @description Verifica con metadata que el video existe, es del usuario del JWT, está en processing y no tiene otra subida activa. Luego reserva cuota en la API de usuarios (reservationId = videoId). Cuota insuficiente: 413 QUOTA_EXCEEDED. Si usuarios o metadata no responden: 502.
+         */
         post: operations["startUpload"];
         delete?: never;
         options?: never;
@@ -27,7 +30,7 @@ export interface paths {
         parameters: {
             query?: never;
             header: {
-                /** @description Checksum SHA-256, codificado en hexadecimal en minúscula, calculado sobre los bytes exactos del fragmento. */
+                /** @description SHA-256 hexadecimal del contenido exacto del fragmento */
                 "X-Chunk-Checksum": string;
                 /** @description Rango byte del fragmento, por ejemplo bytes 0-1048575/5242880 */
                 "Content-Range": string;
@@ -39,7 +42,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Enviar un fragmento con checksum obligatorio */
+        /**
+         * Enviar un fragmento con checksum obligatorio
+         * @description Checksum que no coincide o tamaño inválido devuelve 400; fragmento fuera de secuencia devuelve 409.
+         */
         put: operations["uploadChunk"];
         post?: never;
         delete?: never;
@@ -114,6 +120,7 @@ export interface paths {
             };
             path: {
                 videoId: components["parameters"]["VideoId"];
+                /** @description Ruta del segmento dentro de la carpeta DASH del video. Puede incluir subcarpetas (comodín), lo que OpenAPI no expresa de forma nativa. */
                 path: string;
             };
             cookie?: never;
@@ -166,6 +173,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/videos/{videoId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                videoId: components["parameters"]["VideoId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Borrar los archivos de un video (lo llama metadata)
+         * @description Cancela cualquier subida o transcodificación activa del video y borra del disco los archivos (original, segmentos DASH y miniatura). Responde 202 al aceptar la orden; al terminar el borrado físico, streaming llama a streaming-deleted en la API de metadata. Idempotente: si no hay archivos también devuelve 202. La cuota no se libera aquí; la libera metadata al recibir la confirmación.
+         */
+        delete: operations["deleteVideoFiles"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -173,7 +202,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Consultar estado de salud */
+        /** Comprobar que el servicio está vivo */
         get: operations["getHealth"];
         put?: never;
         post?: never;
@@ -190,7 +219,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Consultar disponibilidad del servicio */
+        /** Comprobar que el servicio está listo (FFmpeg, disco) */
         get: operations["getReady"];
         put?: never;
         post?: never;
@@ -204,90 +233,33 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * @example {
-         *       "fileName": "clase-01.mp4",
-         *       "contentType": "video/mp4",
-         *       "totalBytes": 104857600,
-         *       "chunkSize": 1048576
-         *     }
-         */
         StartUploadRequest: {
-            fileName: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            totalChunks: number;
+            fileChecksum: string;
             /** @enum {string} */
             contentType: "video/mp4" | "video/webm" | "video/quicktime" | "video/x-matroska";
-            /** Format: int64 */
-            totalBytes: number;
-            /** Format: int64 */
-            chunkSize: number;
         };
-        /**
-         * @example {
-         *       "uploadId": "750e8400-e29b-41d4-a716-446655440000",
-         *       "videoId": "550e8400-e29b-41d4-a716-446655440000",
-         *       "reservedBytes": 157286400,
-         *       "receivedBytes": 0,
-         *       "status": "uploading"
-         *     }
-         */
-        StartUploadResponse: {
-            /** Format: uuid */
-            uploadId: string;
-            /** Format: uuid */
-            videoId: string;
-            /** Format: int64 */
-            reservedBytes: number;
-            /** Format: int64 */
-            receivedBytes: number;
-            /** @enum {string} */
-            status: "uploading";
-        };
-        /**
-         * @example {
-         *       "uploadId": "750e8400-e29b-41d4-a716-446655440000",
-         *       "videoId": "550e8400-e29b-41d4-a716-446655440000",
-         *       "status": "uploading",
-         *       "sizeBytes": 104857600,
-         *       "receivedChunks": [
-         *         0,
-         *         1
-         *       ],
-         *       "totalChunks": 100,
-         *       "receivedBytes": 2097152
-         *     }
-         */
         UploadStatus: {
             /** Format: uuid */
             uploadId: string;
             /** Format: uuid */
             videoId: string;
             /** @enum {string} */
-            status: "uploading" | "queued" | "processing" | "published" | "failed";
+            status: "active" | "completing" | "processing" | "completed" | "cancelled" | "failed";
             /** Format: int64 */
             sizeBytes: number;
+            /** @description Tamaño de fragmento que define el servidor */
             chunkSizeBytes?: number;
             receivedChunks: number[];
             totalChunks: number;
             /** Format: int64 */
             receivedBytes?: number;
         };
-        /**
-         * @description fileChecksum es el checksum SHA-256 del archivo completo, codificado en hexadecimal en minúscula y calculado sobre todos sus bytes.
-         * @example {
-         *       "fileChecksum": "dffd6021bb2bd7c1ddbe3f5876aabd57e9efb6b4e5f95c568c0f8f4e2f7a9d0c"
-         *     }
-         */
         CompleteUploadRequest: {
             fileChecksum: string;
         };
-        /**
-         * @example {
-         *       "videoId": "550e8400-e29b-41d4-a716-446655440000",
-         *       "status": "processing",
-         *       "durationSeconds": null,
-         *       "error": null
-         *     }
-         */
         ProcessingStatus: {
             /** Format: uuid */
             videoId: string;
@@ -296,23 +268,10 @@ export interface components {
             durationSeconds?: number | null;
             error?: string | null;
         };
-        /**
-         * @example {
-         *       "code": "QUOTA_EXCEEDED",
-         *       "message": "Cuota insuficiente",
-         *       "details": {
-         *         "requiredBytes": 157286400
-         *       },
-         *       "traceId": "01HZX3Y7J8K9M0N1P2Q3R4S5T6"
-         *     }
-         */
         ApiError: {
-            /** @enum {string} */
-            code: "VALIDATION_ERROR" | "INVALID_CURSOR" | "MISSING_TOKEN" | "INVALID_TOKEN" | "TOKEN_EXPIRED" | "FORBIDDEN" | "QUOTA_EXCEEDED" | "NOT_FOUND" | "CONFLICT" | "USERNAME_EXISTS" | "EMAIL_EXISTS" | "INVALID_STATE" | "PAYLOAD_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "UNPROCESSABLE_ENTITY" | "INTERNAL_ERROR" | "DEPENDENCY_ERROR" | "SERVICE_UNAVAILABLE";
+            code: string;
             message: string;
-            details: {
-                [key: string]: unknown;
-            } | null;
+            details: unknown;
             traceId: string;
         };
     };
@@ -326,23 +285,12 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description Checksum SHA-256 inválido. Responde 400 con code VALIDATION_ERROR y details con información del checksum esperado y recibido. */
-        ChecksumValidationError: {
+        /** @description Token ausente */
+        UnauthorizedError: {
             headers: {
                 [name: string]: unknown;
             };
             content: {
-                /**
-                 * @example {
-                 *       "code": "VALIDATION_ERROR",
-                 *       "message": "Checksum inválido",
-                 *       "details": {
-                 *         "expected": "dffd6021bb2bd7c1ddbe3f5876aabd57e9efb6b4e5f95c568c0f8f4e2f7a9d0c",
-                 *         "received": 0
-                 *       },
-                 *       "traceId": "01HZX3Y7J8K9M0N1P2Q3R4S5T6"
-                 *     }
-                 */
                 "application/json": components["schemas"]["ApiError"];
             };
         };
@@ -355,7 +303,7 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description Cuota insuficiente */
+        /** @description Cuota insuficiente (QUOTA_EXCEEDED) */
         QuotaError: {
             headers: {
                 [name: string]: unknown;
@@ -364,7 +312,7 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description Estado conflictivo */
+        /** @description Estado conflictivo (INVALID_STATE) */
         ConflictError: {
             headers: {
                 [name: string]: unknown;
@@ -400,15 +348,13 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description Estado del servicio */
-        HealthResponse: {
+        /** @description Otro servicio no respondió (DEPENDENCY_ERROR) */
+        DependencyError: {
             headers: {
                 [name: string]: unknown;
             };
             content: {
-                "application/json": {
-                    status: string;
-                };
+                "application/json": components["schemas"]["ApiError"];
             };
         };
         /** @description Servicio no listo */
@@ -418,6 +364,18 @@ export interface components {
             };
             content: {
                 "application/json": components["schemas"]["ApiError"];
+            };
+        };
+        /** @description Estado del servicio */
+        HealthResponse: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    status: "ok" | "ready";
+                };
             };
         };
     };
@@ -452,20 +410,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StartUploadResponse"];
+                    "application/json": components["schemas"]["UploadStatus"];
                 };
             };
             400: components["responses"]["ValidationError"];
+            401: components["responses"]["UnauthorizedError"];
             403: components["responses"]["ForbiddenError"];
+            404: components["responses"]["NotFoundError"];
             409: components["responses"]["ConflictError"];
             413: components["responses"]["QuotaError"];
+            415: components["responses"]["UnsupportedMediaTypeError"];
+            502: components["responses"]["DependencyError"];
         };
     };
     uploadChunk: {
         parameters: {
             query?: never;
             header: {
-                /** @description Checksum SHA-256, codificado en hexadecimal en minúscula, calculado sobre los bytes exactos del fragmento. */
+                /** @description SHA-256 hexadecimal del contenido exacto del fragmento */
                 "X-Chunk-Checksum": string;
                 /** @description Rango byte del fragmento, por ejemplo bytes 0-1048575/5242880 */
                 "Content-Range": string;
@@ -490,6 +452,9 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["ValidationError"];
+            401: components["responses"]["UnauthorizedError"];
+            403: components["responses"]["ForbiddenError"];
+            404: components["responses"]["NotFoundError"];
             409: components["responses"]["ConflictError"];
             413: components["responses"]["PayloadTooLargeError"];
             415: components["responses"]["UnsupportedMediaTypeError"];
@@ -515,6 +480,8 @@ export interface operations {
                     "application/json": components["schemas"]["UploadStatus"];
                 };
             };
+            401: components["responses"]["UnauthorizedError"];
+            403: components["responses"]["ForbiddenError"];
             404: components["responses"]["NotFoundError"];
         };
     };
@@ -536,6 +503,8 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["UnauthorizedError"];
+            403: components["responses"]["ForbiddenError"];
             404: components["responses"]["NotFoundError"];
         };
     };
@@ -560,10 +529,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UploadStatus"];
+                    "application/json": components["schemas"]["ProcessingStatus"];
                 };
             };
-            400: components["responses"]["ChecksumValidationError"];
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["UnauthorizedError"];
+            403: components["responses"]["ForbiddenError"];
+            404: components["responses"]["NotFoundError"];
             409: components["responses"]["ConflictError"];
         };
     };
@@ -587,6 +559,7 @@ export interface operations {
                     "application/dash+xml": string;
                 };
             };
+            401: components["responses"]["UnauthorizedError"];
             403: components["responses"]["ForbiddenError"];
             404: components["responses"]["NotFoundError"];
         };
@@ -599,6 +572,7 @@ export interface operations {
             };
             path: {
                 videoId: components["parameters"]["VideoId"];
+                /** @description Ruta del segmento dentro de la carpeta DASH del video. Puede incluir subcarpetas (comodín), lo que OpenAPI no expresa de forma nativa. */
                 path: string;
             };
             cookie?: never;
@@ -609,6 +583,7 @@ export interface operations {
             200: {
                 headers: {
                     "Cache-Control"?: string;
+                    "Accept-Ranges"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -619,10 +594,15 @@ export interface operations {
             /** @description Rango parcial */
             206: {
                 headers: {
+                    "Content-Range"?: string;
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "video/mp4": string;
+                    "audio/mp4": string;
+                };
             };
+            401: components["responses"]["UnauthorizedError"];
             403: components["responses"]["ForbiddenError"];
             404: components["responses"]["NotFoundError"];
         };
@@ -648,6 +628,7 @@ export interface operations {
                     "image/png": string;
                 };
             };
+            401: components["responses"]["UnauthorizedError"];
             403: components["responses"]["ForbiddenError"];
             404: components["responses"]["NotFoundError"];
         };
@@ -672,8 +653,30 @@ export interface operations {
                     "application/json": components["schemas"]["ProcessingStatus"];
                 };
             };
+            401: components["responses"]["UnauthorizedError"];
             403: components["responses"]["ForbiddenError"];
             404: components["responses"]["NotFoundError"];
+        };
+    };
+    deleteVideoFiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                videoId: components["parameters"]["VideoId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Borrado aceptado */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["UnauthorizedError"];
         };
     };
     getHealth: {

@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 
-export const DEFAULT_CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
+export const DEFAULT_CHUNK_SIZE_BYTES = 4 * 1024 * 1024;
 
 const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
