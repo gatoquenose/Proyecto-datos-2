@@ -1,5 +1,4 @@
 #pragma once
-
 #include "video.hpp"
 #include <mongocxx/collection.hpp>
 #include <mongocxx/database.hpp>
