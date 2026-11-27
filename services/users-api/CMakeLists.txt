@@ -51,6 +51,9 @@ add_library(users_core STATIC
     src/telemetry/OtelUsersMetrics.cpp
     src/telemetry/TraceAwareIdGenerator.cpp
     src/util/IsoTime.cpp
+    src/util/Crc32c.cpp
+    src/storage/Checksum.cpp
+    src/storage/IndexRebuilder.cpp
     src/storage/FileReservationRepository.cpp
     src/storage/FileUserRepository.cpp
     src/storage/FixedRecordFile.cpp
@@ -84,6 +87,9 @@ add_executable(users_tests
     tests/TelemetryTest.cpp
     tests/TracedRouterTest.cpp
     tests/UsageTotalsTest.cpp
+    tests/Crc32cTest.cpp
+    tests/ChecksumTest.cpp
+    tests/IndexRebuilderTest.cpp
 )
 target_link_libraries(users_tests PRIVATE users_core GTest::gtest GTest::gtest_main)
 target_compile_options(users_tests PRIVATE ${TECFLIX_WARNINGS})

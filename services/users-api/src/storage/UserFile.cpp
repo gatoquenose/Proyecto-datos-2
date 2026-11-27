@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "storage/CorruptionError.hpp"
 #include "storage/UserRecordCodec.hpp"
 
 namespace tecflix::users {
@@ -44,15 +45,28 @@ void UserFile::markDeleted(std::uint64_t offset) {
     file_.write(offset, buffer);
 }
 
-void UserFile::forEachActive(const std::function<void(const User&)>& visit) const {
+void UserFile::scan(const std::function<void(const ScannedRecord&)>& visit) const {
     for (std::uint64_t ordinal = 0; ordinal < file_.recordCount(); ++ordinal) {
+        const std::uint64_t offset = file_.offsetOfRecord(ordinal);
         RecordBuffer buffer{};
-        file_.read(file_.offsetOfRecord(ordinal), buffer);
-        const DecodedRecord decoded = UserRecordCodec::decode(buffer);
-        if (decoded.status == RecordStatus::Active) {
-            visit(decoded.user);
+        file_.read(offset, buffer);
+        try {
+            DecodedRecord decoded = UserRecordCodec::decode(buffer);
+            const bool active = decoded.status == RecordStatus::Active;
+            visit({offset, active ? RecordState::Active : RecordState::Deleted,
+                   active ? std::optional<User>{std::move(decoded.user)} : std::nullopt});
+        } catch (const CorruptionError&) {
+            visit({offset, RecordState::Corrupt, std::nullopt});
         }
     }
+}
+
+void UserFile::forEachActive(const std::function<void(const User&)>& visit) const {
+    scan([&visit](const ScannedRecord& record) {
+        if (record.state == RecordState::Active) {
+            visit(*record.user);
+        }
+    });
 }
 
 std::uint64_t UserFile::recordCount() const {

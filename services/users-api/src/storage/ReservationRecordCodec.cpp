@@ -4,6 +4,8 @@
 
 #include "domain/User.hpp"
 #include "storage/ByteCodec.hpp"
+#include "storage/Checksum.hpp"
+#include "storage/CorruptionError.hpp"
 
 namespace tecflix::users {
 
@@ -11,7 +13,6 @@ namespace {
 
 constexpr std::size_t kLengthByte = 1;
 constexpr std::size_t kNumberBytes = sizeof(std::uint64_t);
-constexpr std::size_t kChecksumBytes = 4;
 
 constexpr std::size_t kStatusOffset = 0;
 constexpr std::size_t kIdOffset = 1;
@@ -38,11 +39,13 @@ void ReservationRecordCodec::encode(const Reservation& reservation, ReservationB
     putLittleEndian<std::uint64_t>(buffer, kBytesOffset, reservation.bytes);
     putLittleEndian<std::uint64_t>(buffer, kCreatedOffset, static_cast<std::uint64_t>(reservation.createdAt));
     putLittleEndian<std::uint64_t>(buffer, kExpiresOffset, static_cast<std::uint64_t>(reservation.expiresAt));
+    sealChecksum(buffer, kChecksumOffset);
 }
 
 Reservation ReservationRecordCodec::decode(const ReservationBuffer& buffer) {
+    requireChecksum(buffer, kChecksumOffset, "registro de reserva");
     if (!isKnownStatus(buffer[kStatusOffset])) {
-        throw std::runtime_error("reserva corrupta: estado desconocido");
+        throw CorruptionError("reserva corrupta: estado desconocido");
     }
     Reservation reservation;
     reservation.status = static_cast<ReservationStatus>(buffer[kStatusOffset]);

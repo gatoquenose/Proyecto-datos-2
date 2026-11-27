@@ -4,39 +4,14 @@
 #include <stdexcept>
 
 #include "storage/BTreeLayout.hpp"
+#include "storage/UserIndexKeys.hpp"
 
 namespace tecflix::users {
 
 namespace {
 
-constexpr std::string_view kIdPrefix = "i:";
-constexpr std::string_view kUsernamePrefix = "u:";
-constexpr std::string_view kEmailPrefix = "e:";
-constexpr std::size_t kPrefixLength = 2;
-constexpr char kCaseOffset = 'a' - 'A';
-
-static_assert(kMaxEmailLength + kPrefixLength <= kMaxKeyLength, "la clave del email debe caber en el índice");
-static_assert(kMaxUsernameLength + kPrefixLength <= kMaxKeyLength, "la clave del username debe caber en el índice");
-
-std::string lowerAscii(std::string_view text) {
-    std::string result{text};
-    std::ranges::transform(result, result.begin(), [](char c) {
-        return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + kCaseOffset) : c;
-    });
-    return result;
-}
-
-std::string idKey(std::string_view id) {
-    return std::string{kIdPrefix} + lowerAscii(id);
-}
-
-std::string usernameKey(std::string_view username) {
-    return std::string{kUsernamePrefix} + lowerAscii(username);
-}
-
-std::string emailKey(std::string_view email) {
-    return std::string{kEmailPrefix} + lowerAscii(email);
-}
+static_assert(kMaxEmailLength + kKeyPrefixLength <= kMaxKeyLength, "la clave del email debe caber en el índice");
+static_assert(kMaxUsernameLength + kKeyPrefixLength <= kMaxKeyLength, "la clave del username debe caber en el índice");
 
 void validate(const User& user) {
     if (user.id.empty() || user.username.empty() || user.email.empty() || user.passwordHash.empty()) {

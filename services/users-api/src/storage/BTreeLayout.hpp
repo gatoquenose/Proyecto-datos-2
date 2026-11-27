@@ -8,7 +8,7 @@
 namespace tecflix::users {
 
 // Formato de una página del árbol B (4096 bytes):
-//   [0, 8)      cabecera: hoja (1 byte), reservado (1), cantidad de claves (2), reservado (4)
+//   [0, 8)      cabecera: hoja (1 byte), reservado (1), cantidad de claves (2), CRC32C de la página (4)
 //   [8, ...)    claves: kMaxKeys espacios de kKeySlotBytes (1 byte de largo + texto)
 //   [...]       valores: kMaxKeys enteros de 8 bytes (offset del registro en users.dat)
 //   [...]       hijos: kMaxKeys + 1 identificadores de página de 4 bytes

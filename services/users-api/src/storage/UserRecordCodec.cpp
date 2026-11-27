@@ -3,6 +3,8 @@
 #include <stdexcept>
 
 #include "storage/ByteCodec.hpp"
+#include "storage/Checksum.hpp"
+#include "storage/CorruptionError.hpp"
 
 namespace tecflix::users {
 
@@ -10,7 +12,6 @@ namespace {
 
 constexpr std::size_t kLengthByte = 1;
 constexpr std::size_t kNumberBytes = sizeof(std::uint64_t);
-constexpr std::size_t kChecksumBytes = 4;
 
 constexpr std::size_t kStatusOffset = 0;
 constexpr std::size_t kIdOffset = 1;
@@ -32,18 +33,20 @@ bool isKnownStatus(std::uint8_t value) {
 
 void UserRecordCodec::encode(const User& user, RecordStatus status, RecordBuffer& buffer) {
     buffer.fill(0);
-    setStatus(buffer, status);
+    buffer[kStatusOffset] = static_cast<std::uint8_t>(status);
     putFixedString(buffer, kIdOffset, kMaxIdLength, user.id);
     putFixedString(buffer, kUsernameOffset, kMaxUsernameLength, user.username);
     putFixedString(buffer, kEmailOffset, kMaxEmailLength, user.email);
     putFixedString(buffer, kHashOffset, kMaxPasswordHashLength, user.passwordHash);
     putLittleEndian<std::uint64_t>(buffer, kQuotaOffset, user.quotaBytes);
     putLittleEndian<std::uint64_t>(buffer, kUsedOffset, user.usedBytes);
+    sealChecksum(buffer, kChecksumOffset);
 }
 
 DecodedRecord UserRecordCodec::decode(const RecordBuffer& buffer) {
+    requireChecksum(buffer, kChecksumOffset, "registro de usuario");
     if (!isKnownStatus(buffer[kStatusOffset])) {
-        throw std::runtime_error("registro corrupto: estado desconocido");
+        throw CorruptionError("registro corrupto: estado desconocido");
     }
     DecodedRecord decoded;
     decoded.status = static_cast<RecordStatus>(buffer[kStatusOffset]);
@@ -57,7 +60,10 @@ DecodedRecord UserRecordCodec::decode(const RecordBuffer& buffer) {
 }
 
 void UserRecordCodec::setStatus(RecordBuffer& buffer, RecordStatus status) {
+    // Se verifica antes de volver a sellar: si no, un registro dañado quedaría "legalizado" con un CRC nuevo.
+    requireChecksum(buffer, kChecksumOffset, "registro de usuario");
     buffer[kStatusOffset] = static_cast<std::uint8_t>(status);
+    sealChecksum(buffer, kChecksumOffset);  // el estado está dentro de la zona protegida
 }
 
 }  // namespace tecflix::users
