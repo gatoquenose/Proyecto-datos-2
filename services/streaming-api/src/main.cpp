@@ -8,6 +8,14 @@
 #include "tecflix/auth/JwtVerifier.hpp"
 #include "tecflix/auth/SystemClock.hpp"
 #include "StreamingProcessingE2.hpp"
+#include "tecflix/telemetry/TelemetrySetup.hpp"
+#include "tecflix/telemetry/OtelHttpServerMetrics.hpp"
+#include "tecflix/telemetry/ServerSpan.hpp"
+#include "tecflix/telemetry/GaugeRegistry.hpp"
+#include "tecflix/telemetry/ProcessGauges.hpp"
+#include "opentelemetry/context/context.h"
+#include <chrono>
+#include <memory>
 
 #include <algorithm>
 #include <array>
@@ -179,11 +187,15 @@ std::map<std::string, Upload> load(const fs::path& root) {
 class StreamingApi {
 public:
     StreamingApi(std::string secret, std::string serviceToken, fs::path root,
-                 std::string usersHost, int usersPort, std::string metadataHost, int metadataPort)
+                 std::string usersHost, int usersPort, std::string metadataHost, int metadataPort,
+                 const opentelemetry::nostd::shared_ptr<opentelemetry::metrics::Meter>& meter)
         : clock_(), verifier_(std::move(secret), clock_), token_(std::move(serviceToken)), root_(std::move(root)),
-          usersHost_(std::move(usersHost)), usersPort_(usersPort), metadataHost_(std::move(metadataHost)),
-          metadataPort_(metadataPort), transcoder_(envOr("FFMPEG_BIN", "ffmpeg"), envOr("FFPROBE_BIN", "ffprobe")),
-          frontendOrigin_(envOr("FRONTEND_ORIGIN", "http://localhost:5173")) {
+        usersHost_(std::move(usersHost)), usersPort_(usersPort), metadataHost_(std::move(metadataHost)),
+        metadataPort_(metadataPort), transcoder_(envOr("FFMPEG_BIN", "ffmpeg"), envOr("FFPROBE_BIN", "ffprobe")),
+          frontendOrigin_(envOr("FRONTEND_ORIGIN", "http://localhost:5173")),
+          uploadsStarted_(meter->CreateUInt64Counter("streaming_uploads_started_total", "Subidas iniciadas", "{upload}")),
+          quotaRejected_(meter->CreateUInt64Counter("streaming_uploads_quota_rejected_total", "Subidas rechazadas por cuota", "{upload}")),
+          transcodeDuration_(meter->CreateDoubleHistogram("streaming_transcode_duration_seconds", "Duracion de transcodificacion", "s")) {
         fs::create_directories(root_ / "sessions");
         fs::create_directories(root_ / "uploads");
         // Las ordenes aceptadas sobreviven reinicios/crashes del proceso.
@@ -209,36 +221,73 @@ public:
         cv_.notify_all();
         if (worker_.joinable()) worker_.join();
     }
-    void configure(httplib::Server& server) {
-        server.Get("/api/v1/health", [](const auto&, auto& res) { sendJson(res, 200, {{"status", "ok"}}); });
-        server.Get("/health", [](const auto&, auto& res) { sendJson(res, 200, {{"status", "ok"}}); });
-        server.Get("/api/v1/ready", [this](const auto&, auto& res) {
-            const bool ready = toolsAvailable_ && fs::exists(root_);
+    std::int64_t transcodeQueueSize() {
+        std::lock_guard lock(mutex_);
+        return static_cast<std::int64_t>(jobs_.size());
+    }
+
+    void configure(httplib::Server& server,
+                   tecflix::telemetry::OtelHttpServerMetrics& metrics) {
+        auto traced = [&metrics](std::string route, auto handler) {
+            return [&metrics, route = std::move(route), handler = std::move(handler)]
+                   (const httplib::Request& req, httplib::Response& res) {
+                const auto start = std::chrono::steady_clock::now();
+                tecflix::telemetry::ServerSpan span{
+                    "streaming-api", req.method, route, req.path,
+                    [&req](std::string_view name) {
+                        return req.get_header_value(std::string(name));
+                    }
+                };
+                auto record = [&](int status) {
+                    span.finish(status);
+                    metrics.record(req.method, route, status,
+                        std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - start).count());
+                };
+                try {
+                    handler(req, res);
+                } catch (...) {
+                    record(500);
+                    throw;
+                }
+                // File responses may not have a status until httplib writes them.
+                record(res.status > 0 ? res.status : 200);
+            };
+        };
+        server.Get("/api/v1/health", traced("/api/v1/health", [](const auto&, auto& res) { sendJson(res, 200, {{"status", "ok"}}); }));
+        server.Get("/health", traced("/health", [](const auto&, auto& res) { sendJson(res, 200, {{"status", "ok"}}); }));
+        server.Get("/api/v1/ready", traced("/api/v1/ready", [this](const auto&, auto& res) {
+            const bool ready = toolsAvailable_ && dataDirectoryWritable();
             sendJson(res, ready ? 200 : 503, {{"status", ready ? "ready" : "unavailable"}});
-        });
-        server.Get("/ready", [this](const auto&, auto& res) {
-            const bool ready = toolsAvailable_ && fs::exists(root_);
+        }));
+        server.Get("/ready", traced("/ready", [this](const auto&, auto& res) {
+            const bool ready = toolsAvailable_ && dataDirectoryWritable();
             sendJson(res, ready ? 200 : 503, {{"status", ready ? "ready" : "unavailable"}});
-        });
-        server.Post(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/upload)", [this](const auto& req, auto& res) { start(req, res); });
-        server.Put(R"(/api/v1/uploads/([0-9A-Fa-f-]{36})/chunks/([0-9]+))", [this](const auto& req, auto& res) { chunk(req, res); });
-        server.Get(R"(/api/v1/uploads/([0-9A-Fa-f-]{36}))", [this](const auto& req, auto& res) { get(req, res); });
-        server.Delete(R"(/api/v1/uploads/([0-9A-Fa-f-]{36}))", [this](const auto& req, auto& res) { cancel(req, res); });
-        server.Delete(R"(/api/v1/internal/videos/([0-9A-Fa-f-]{36}))", [this](const auto& req, auto& res) { requestPhysicalDeletion(req, res); });
-        server.Post(R"(/api/v1/uploads/([0-9A-Fa-f-]{36})/complete)", [this](const auto& req, auto& res) { complete(req, res); });
-        server.Get(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/processing)", [this](const auto& req, auto& res) { processing(req, res); });
-        server.Get(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/manifest\.mpd)", [this](const auto& req, auto& res) { media(req, res, "manifest.mpd"); });
-        server.Get(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/thumbnail)", [this](const auto& req, auto& res) { media(req, res, "thumbnail.jpg"); });
-        server.Get(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/dash/([A-Za-z0-9_.-]+))", [this](const auto& req, auto& res) {
+        }));
+        server.Post(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/upload)", traced("/api/v1/videos/{id}/upload", [this](const auto& req, auto& res) { start(req, res); }));
+        server.Put(R"(/api/v1/uploads/([0-9A-Fa-f-]{36})/chunks/([0-9]+))", traced("/api/v1/uploads/{id}/chunks/{index}", [this](const auto& req, auto& res) { chunk(req, res); }));
+        server.Get(R"(/api/v1/uploads/([0-9A-Fa-f-]{36}))", traced("/api/v1/uploads/{id}", [this](const auto& req, auto& res) { get(req, res); }));
+        server.Delete(R"(/api/v1/uploads/([0-9A-Fa-f-]{36}))", traced("/api/v1/uploads/{id}", [this](const auto& req, auto& res) { cancel(req, res); }));
+        server.Delete(R"(/api/v1/internal/videos/([0-9A-Fa-f-]{36}))", traced("/api/v1/internal/videos/{id}", [this](const auto& req, auto& res) { requestPhysicalDeletion(req, res); }));
+        server.Post(R"(/api/v1/uploads/([0-9A-Fa-f-]{36})/complete)", traced("/api/v1/uploads/{id}/complete", [this](const auto& req, auto& res) { complete(req, res); }));
+        server.Get(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/processing)", traced("/api/v1/videos/{id}/processing", [this](const auto& req, auto& res) { processing(req, res); }));
+        server.Get(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/manifest\.mpd)", traced("/api/v1/videos/{id}/manifest.mpd", [this](const auto& req, auto& res) { media(req, res, "manifest.mpd"); }));
+        server.Get(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/thumbnail)", traced("/api/v1/videos/{id}/thumbnail", [this](const auto& req, auto& res) { media(req, res, "thumbnail.jpg"); }));
+        server.Get(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/dash/([A-Za-z0-9_.-]+))", traced("/api/v1/videos/{id}/dash/{file}", [this](const auto& req, auto& res) {
             const std::string filename = req.matches[2].str();
             if (filename == "." || filename == ".." || filename.find("..") != std::string::npos) {
                 fail(res, 400, "VALIDATION_ERROR", "Archivo invalido"); return;
             }
             media(req, res, filename);
-        });
-        server.Options(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/(manifest\.mpd|thumbnail|dash/[A-Za-z0-9_.-]+))", [this](const auto& req, auto& res) {
-            cors(req, res); res.status = req.get_header_value("Origin") == frontendOrigin_ ? 204 : 403;
-        });
+        }));
+        server.Options(R"(/api/v1/(videos|uploads)/.*)", traced("/api/v1/{resource}/*", [this](const auto& req, auto& res) {
+        res.status = req.get_header_value("Origin") == frontendOrigin_
+            ? 204 : 403;
+        }));
+
+    server.set_post_routing_handler([this](const auto& req, auto& res) {
+        cors(req, res);
+    });
     }
 private:
     auth::SystemClock clock_;
@@ -251,6 +300,9 @@ private:
     std::map<std::string, Upload> uploads_;
     tecflix::streaming::FfmpegTranscoder transcoder_;
     std::string frontendOrigin_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<std::uint64_t>> uploadsStarted_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<std::uint64_t>> quotaRejected_;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Histogram<double>> transcodeDuration_;
     bool toolsAvailable_ = false;
     std::condition_variable cv_;
     std::deque<std::string> jobs_;
@@ -259,7 +311,43 @@ private:
     std::thread worker_;
     bool stopping_ = false;
 
+    bool dataDirectoryWritable() const {
+    std::error_code ec;
+
+    if (!fs::is_directory(root_, ec) || ec) {
+        return false;
+        }
+
+        const auto path = root_ / (".ready-" + randomUuid());
+
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            return false;
+        }
+
+        file << "ready";
+        file.close();
+
+        const bool writable = !file.fail();
+
+        fs::remove(path, ec);
+
+        return writable && !ec;
+    }
+
     void cors(const httplib::Request& req, httplib::Response& res) const {
+    res.set_header("Vary", "Origin");
+
+        if (req.get_header_value("Origin") == frontendOrigin_) {
+            res.set_header("Access-Control-Allow-Origin", frontendOrigin_);
+            res.set_header("Access-Control-Allow-Headers",
+                "Authorization, Range, Content-Type, Content-Range, X-Chunk-Checksum");
+            res.set_header("Access-Control-Allow-Methods",
+                "GET, POST, PUT, DELETE, OPTIONS");
+            res.set_header("Access-Control-Expose-Headers",
+                "Accept-Ranges, Content-Range, Content-Length");
+        }
+    }
         if (req.get_header_value("Origin") == frontendOrigin_) {
             res.set_header("Access-Control-Allow-Origin", frontendOrigin_);
             res.set_header("Vary", "Origin");
@@ -277,11 +365,11 @@ private:
         const std::string url = "/api/v1/internal/videos/" + u.videoId +
             (success ? "/processing-complete" : "/processing-failed");
         const Json body = success ? Json{{"durationSeconds", duration}, {"finalSizeBytes", bytes}}
-                                  : Json{{"reason", reason.substr(0, 900)}};
+                                : Json{{"reason", reason.substr(0, 900)}};
         auto r = client.Post(url, h, body.dump(), "application/json");
         if (!r || r->status != 204) {
             std::cerr << "Metadata no confirmo " << url << " ("
-                      << (r ? std::to_string(r->status) : "sin respuesta") << ")\n";
+                    << (r ? std::to_string(r->status) : "sin respuesta") << ")\n";
             return false;
         }
         return true;
@@ -292,10 +380,10 @@ private:
         const httplib::Headers h{{"Authorization", "Bearer " + token_}};
         const Json body{{"finalBytes", bytes}};
         auto r = client.Post("/api/v1/internal/quota/reservations/" + u.videoId + "/settle", h,
-                             body.dump(), "application/json");
+                            body.dump(), "application/json");
         if (!r || r->status != 200) {
             std::cerr << "No se pudo ajustar la cuota de " << u.videoId << " ("
-                      << (r ? std::to_string(r->status) : "sin respuesta") << ")\n";
+                    << (r ? std::to_string(r->status) : "sin respuesta") << ")\n";
             return false;
         }
         return true;
@@ -338,7 +426,24 @@ private:
             if (snapshot.status != "processing") continue;
             try {
                 if (!toolsAvailable_) throw std::runtime_error("FFmpeg/FFprobe no estan disponibles");
-                const auto result = transcoder_.transcode(root_ / "uploads" / id);
+                // Eliminar fragmentos temporales una vez reconstruido el original.
+                fs::remove_all(root_ / "uploads" / id / "parts");
+                const auto transcodeStart = std::chrono::steady_clock::now();
+                const auto result = [&] {
+                    auto recordDuration = [&] {
+                        transcodeDuration_->Record(std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - transcodeStart).count(),
+                            opentelemetry::context::Context{});
+                    };
+                    try {
+                        auto output = transcoder_.transcode(root_ / "uploads" / id);
+                        recordDuration();
+                        return output;
+                    } catch (...) {
+                        recordDuration();
+                        throw;
+                    }
+                }();
                 if (!quotaSettle(snapshot, result.finalBytes)) {
                     throw std::runtime_error("Usuarios rechazo el ajuste de cuota");
                 }
@@ -364,12 +469,19 @@ private:
                 std::string reason = ex.what();
                 std::cerr << "Procesamiento fallido " << snapshot.videoId << ": " << reason << '\n';
                 std::error_code ec;
-                fs::remove_all(root_ / "uploads" / id / "dash.tmp", ec);
-                fs::remove_all(root_ / "uploads" / id / "dash", ec);
-                fs::remove(root_ / "uploads" / id / "thumbnail.tmp.jpg", ec);
-                fs::remove(root_ / "uploads" / id / "thumbnail.jpg", ec);
+
+                // Eliminar todos los archivos de la subida fallida.
+                fs::remove_all(root_ / "uploads" / id, ec);
+
+                if (ec) {
+                    std::cerr << "Error al limpiar la subida "
+                            << id << ": " << ec.message() << '\n';
+                }
+
                 httplib::Response ignored;
-                const bool released = quotaRelease(snapshot, ignored);
+
+                // Liberar la cuota solo si se eliminaron los archivos.
+                const bool released = !ec && quotaRelease(snapshot, ignored);
                 const bool synced = notifyMetadata(snapshot, false, 0, 0, reason);
                 std::lock_guard lock(mutex_);
                 auto it = uploads_.find(id);
@@ -383,7 +495,6 @@ private:
         }
     }
     void media(const httplib::Request& req, httplib::Response& res, const std::string& filename) {
-        cors(req, res);
         const auto claims = user(req, res);
         if (!claims) return;
         const auto vid = req.matches[1].str();
@@ -469,7 +580,7 @@ private:
         const Json body{{"reservationId", u.videoId}, {"userId", u.ownerId}, {"bytes", u.reservedBytes}};
         auto result = client.Post("/api/v1/internal/quota/reservations", headers, body.dump(), "application/json");
         if (!result) { fail(res, 502, "DEPENDENCY_ERROR", "Usuarios no responde"); return false; }
-        if (result->status == 403) { fail(res, 413, "QUOTA_EXCEEDED", "Cuota insuficiente"); return false; }
+        if (result->status == 403) { quotaRejected_->Add(1); fail(res, 413, "QUOTA_EXCEEDED", "Cuota insuficiente"); return false; }
         if (result->status != 200 && result->status != 201) {
             fail(res, 502, "DEPENDENCY_ERROR", "No se pudo reservar cuota; revisar usuarios"); return false;
         }
@@ -538,6 +649,7 @@ private:
             quotaRelease(u, ignored);
             fail(res, 500, "INTERNAL_ERROR", "No fue posible iniciar la subida"); return;
         }
+        uploadsStarted_->Add(1);
         sendJson(res, 201, asJson(u));
     }
     void chunk(const httplib::Request& req, httplib::Response& res) {
@@ -615,14 +727,17 @@ private:
         if (it == uploads_.end()) { fail(res, 404, "NOT_FOUND", "Subida desconocida"); return; }
         if (it->second.ownerId != claims->subject) { fail(res, 403, "FORBIDDEN", "Subida ajena"); return; }
         if (it->second.status != "active") { fail(res, 409, "INVALID_STATE", "No puede cancelarse en ese estado"); return; }
-        if (!quotaRelease(it->second, res)) return;
         try {
             fs::remove_all(root_ / "uploads" / it->first);
+
+            if (!quotaRelease(it->second, res)) return;
+
             fs::remove(root_ / "sessions" / (it->first + ".json"));
             uploads_.erase(it);
             res.status = 204;
-        } catch (const std::exception&) { fail(res, 500, "INTERNAL_ERROR", "Error al limpiar archivos"); }
-    }
+        } catch (const std::exception&) {
+            fail(res, 500, "INTERNAL_ERROR", "Error al limpiar archivos");
+        }
     void complete(const httplib::Request& req, httplib::Response& res) {
         const auto claims = user(req, res);
         if (!claims) return;
@@ -749,8 +864,8 @@ private:
             auto reply = client.Post(endpoint, h, "", "application/json");
             if (!reply || reply->status != 204) {
                 std::cerr << "Pendiente callback streaming-deleted " << videoId
-                          << " (" << (reply ? std::to_string(reply->status) : "sin respuesta")
-                          << "); reintentar DELETE metadata\n";
+                        << " (" << (reply ? std::to_string(reply->status) : "sin respuesta")
+                        << "); reintentar DELETE metadata\n";
             } else {
                 // Quitar el marcador SOLO cuando metadata confirme la liberacion.
                 // La confirmacion interna es idempotente si se repite al reiniciar.
@@ -796,12 +911,25 @@ int main() {
         const std::string token = requiredEnv("SERVICE_TOKEN");
         if (token.size() < 32) throw std::runtime_error("SERVICE_TOKEN requiere al menos 32 caracteres");
         const fs::path storage = envOr("STREAMING_DATA_DIR", "build-v143/streaming-data");
+        tecflix::telemetry::TelemetrySetup telemetry{{
+            "streaming-api", "1.0.0", envOr("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+            std::chrono::milliseconds{15000},
+            {"http_request_duration_seconds", "streaming_transcode_duration_seconds"}
+        }};
+        const auto meter = telemetry.meter();
+        tecflix::telemetry::OtelHttpServerMetrics httpMetrics{meter};
         StreamingApi app(secret, token, storage,
-                         envOr("USERS_API_HOST", "127.0.0.1"), std::stoi(envOr("USERS_API_PORT", "8080")),
-                         envOr("METADATA_API_HOST", "127.0.0.1"), std::stoi(envOr("METADATA_API_PORT", "8082")));
+                        envOr("USERS_API_HOST", "127.0.0.1"), std::stoi(envOr("USERS_API_PORT", "8081")),
+                         envOr("METADATA_API_HOST", "127.0.0.1"), std::stoi(envOr("METADATA_API_PORT", "8082")), meter);
+        // Destroy the registry before the sampler and before the API it observes.
+        std::unique_ptr<tecflix::telemetry::ProcessSampler> processSampler;
+        tecflix::telemetry::GaugeRegistry gauges{meter};
+        processSampler = tecflix::telemetry::registerProcessGauges(gauges, storage);
+        gauges.addInteger("streaming_transcode_queue_size", "Trabajos pendientes", "{job}",
+                          [&app] { return app.transcodeQueueSize(); });
         httplib::Server server;
         server.set_payload_max_length(kMaxBodyBytes);
-        app.configure(server);
+        app.configure(server, httpMetrics);
         const int port = std::stoi(envOr("STREAMING_API_PORT", "8083"));
         if (port < 1 || port > 65535) throw std::runtime_error("Puerto invalido");
         std::cout << "streaming-api (E2: subida + FFmpeg + DASH) escuchando en " << port << '\n';

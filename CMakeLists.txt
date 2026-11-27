@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+﻿cmake_minimum_required(VERSION 3.24)
 
 if(DEFINED ENV{VCPKG_ROOT} AND EXISTS "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
   set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
@@ -67,9 +67,14 @@ find_package(httplib CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(unofficial-sodium CONFIG REQUIRED)
 
+if(NOT TARGET tecflix_telemetry)
+    add_subdirectory(services/common/telemetry)
+endif()
+
 target_link_libraries(streaming-api PRIVATE
-  tecflix_auth
-  httplib::httplib
-  nlohmann_json::nlohmann_json
-  unofficial-sodium::sodium
+    tecflix_auth
+    httplib::httplib
+    nlohmann_json::nlohmann_json
+    unofficial-sodium::sodium
+    tecflix_telemetry
 )

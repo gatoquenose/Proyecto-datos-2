@@ -152,7 +152,9 @@ public:
         // Solo generar alturas <= altura original. Si es inferior a 240p, usar su altura nativa.
         std::vector<int> heights;
         for (int h : {240, 360, 480, 720, 1080}) if (h <= height) heights.push_back(h);
-        if (heights.empty()) heights.push_back(height);
+        if (heights.empty()) {
+        heights.push_back(height - (height % 2));
+        }
         if (heights.size() > 5) throw std::runtime_error("Numero de rendiciones invalido");
 
         std::string graph = "[0:v:0]split=" + std::to_string(heights.size());
@@ -161,7 +163,7 @@ public:
         for (std::size_t i = 0; i < heights.size(); ++i) {
             if (i) graph += ";";
             graph += "[raw" + std::to_string(i) + "]scale=-2:" + std::to_string(heights[i]) +
-                     "[v" + std::to_string(i) + "]";
+                    "[v" + std::to_string(i) + "]";
         }
         std::vector<std::string> args = {
             "-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", original.string(),
