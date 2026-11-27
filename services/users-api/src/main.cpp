@@ -8,6 +8,8 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
+#include "api/Cors.hpp"
+#include <cstdlib>
 
 #include "api/HealthController.hpp"
 #include "api/InternalQuotaController.hpp"
@@ -127,6 +129,9 @@ int main() {
 
         httplib::Server server;
         configureServer(server, traceIds);
+        const char* originEnv = std::getenv("FRONTEND_ORIGIN");
+        const std::string frontendOrigin = (originEnv && *originEnv) ? originEnv : "http://localhost:5173";
+        tecflix::users::configureCors(server, frontendOrigin);
         // "Listo" = el archivo de usuarios responde (una búsqueda de prueba no falla).
         const HealthController health{[&repository] {
             static_cast<void>(repository.findById(kReadinessProbeId));

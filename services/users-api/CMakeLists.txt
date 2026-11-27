@@ -26,6 +26,7 @@ add_library(users_core STATIC
     src/api/ApiResponses.cpp
     src/api/BearerToken.cpp
     src/api/HealthController.cpp
+    src/api/Cors.cpp
     src/api/InternalQuotaController.cpp
     src/api/ServerSetup.cpp
     src/api/TracedRouter.cpp
