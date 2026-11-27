@@ -257,11 +257,11 @@ public:
         server.Get("/api/v1/health", traced("/api/v1/health", [](const auto&, auto& res) { sendJson(res, 200, {{"status", "ok"}}); }));
         server.Get("/health", traced("/health", [](const auto&, auto& res) { sendJson(res, 200, {{"status", "ok"}}); }));
         server.Get("/api/v1/ready", traced("/api/v1/ready", [this](const auto&, auto& res) {
-            const bool ready = toolsAvailable_ && fs::exists(root_);
+            const bool ready = toolsAvailable_ && dataDirectoryWritable();
             sendJson(res, ready ? 200 : 503, {{"status", ready ? "ready" : "unavailable"}});
         }));
         server.Get("/ready", traced("/ready", [this](const auto&, auto& res) {
-            const bool ready = toolsAvailable_ && fs::exists(root_);
+            const bool ready = toolsAvailable_ && dataDirectoryWritable();
             sendJson(res, ready ? 200 : 503, {{"status", ready ? "ready" : "unavailable"}});
         }));
         server.Post(R"(/api/v1/videos/([0-9A-Fa-f-]{36})/upload)", traced("/api/v1/videos/{id}/upload", [this](const auto& req, auto& res) { start(req, res); }));
@@ -310,6 +310,30 @@ private:
     std::set<std::string> deletingVideos_;
     std::thread worker_;
     bool stopping_ = false;
+
+    bool dataDirectoryWritable() const {
+    std::error_code ec;
+
+    if (!fs::is_directory(root_, ec) || ec) {
+        return false;
+        }
+
+        const auto path = root_ / (".ready-" + randomUuid());
+
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            return false;
+        }
+
+        file << "ready";
+        file.close();
+
+        const bool writable = !file.fail();
+
+        fs::remove(path, ec);
+
+        return writable && !ec;
+    }
 
     void cors(const httplib::Request& req, httplib::Response& res) const {
     res.set_header("Vary", "Origin");
