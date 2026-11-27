@@ -9,7 +9,7 @@ processors:
 
 exporters:
   # Métricas en formato Prometheus; Prometheus las lee de aquí.
-  prometheus: { endpoint: 0.0.0.0:8889 }
+  prometheus: { endpoint: 0.0.0.0:8889, resource_to_telemetry_conversion: { enabled: true } }
   # Trazas y logs hacia Aspire Dashboard.
   otlp/aspire: { endpoint: aspire-dashboard:18889, tls: { insecure: true } }
   debug: { verbosity: basic }
