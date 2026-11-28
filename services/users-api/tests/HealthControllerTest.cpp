@@ -5,6 +5,7 @@
 #include <atomic>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <string>
 #include <thread>
 
 #include "api/HealthController.hpp"
@@ -33,6 +34,24 @@ int statusOf(const HealthController& controller, const char* path) {
     return result ? result->status : 0;
 }
 
+class FixedTraceIds final : public IIdGenerator {
+public:
+    [[nodiscard]] std::string next() const override { return "traza-de-prueba"; }
+};
+
+// Pide una ruta y devuelve el cuerpo de la respuesta.
+std::string bodyOf(const HealthController& controller, const char* path) {
+    httplib::Server server;
+    controller.registerRoutes(server);
+    const int port = server.bind_to_any_port("127.0.0.1");
+    std::thread worker([&server] { server.listen_after_bind(); });
+    httplib::Client client("127.0.0.1", port);
+    const auto result = client.Get(path);
+    server.stop();
+    worker.join();
+    return result ? result->body : std::string{};
+}
+
 }  // namespace
 
 TEST(HealthControllerTest, ReadyIsOkWhenTheCheckPasses) {
@@ -49,6 +68,16 @@ TEST(HealthControllerTest, ReadyIsUnavailableWhenTheCheckFailsOrThrows) {
     EXPECT_EQ(statusOf(failing, "/api/v1/ready"), 503);
     EXPECT_EQ(statusOf(throwing, "/api/v1/ready"), 503);
     EXPECT_EQ(statusOf(failing, "/api/v1/health"), 200);  // vivo aunque no esté listo
+}
+
+TEST(HealthControllerTest, UnavailableReadyCarriesATraceId) {
+    const FixedTraceIds traceIds;
+    const HealthController controller{[] { return false; }, traceIds};
+
+    const auto body = nlohmann::json::parse(bodyOf(controller, "/api/v1/ready"));
+
+    EXPECT_EQ(body.at("code"), "SERVICE_UNAVAILABLE");
+    EXPECT_EQ(body.at("traceId"), "traza-de-prueba");
 }
 
 }  // namespace tecflix::users

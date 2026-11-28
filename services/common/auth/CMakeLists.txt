@@ -24,6 +24,7 @@ target_compile_options(tecflix_auth PRIVATE ${TECFLIX_WARNINGS})
 add_executable(tecflix_auth_tests
     tests/Base64UrlTest.cpp
     tests/JwtTest.cpp
+    tests/SystemClockTest.cpp
 )
 target_include_directories(tecflix_auth_tests PRIVATE src)  # para probar JwtCrypto.hpp (interno)
 target_link_libraries(tecflix_auth_tests PRIVATE tecflix_auth GTest::gtest GTest::gtest_main)

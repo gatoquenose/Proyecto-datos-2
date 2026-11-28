@@ -5,6 +5,8 @@
 
 #include "storage/BTreeLayout.hpp"
 #include "storage/ByteCodec.hpp"
+#include "storage/Checksum.hpp"
+#include "storage/CorruptionError.hpp"
 
 namespace tecflix::users {
 
@@ -12,6 +14,7 @@ namespace {
 
 constexpr std::size_t kLeafFlagOffset = 0;
 constexpr std::size_t kCountOffset = 2;
+constexpr std::size_t kChecksumOffset = 4;
 constexpr std::uint8_t kLeafMarker = 1;
 
 }  // namespace
@@ -39,12 +42,14 @@ void BTreePage::encode(const BTreeNode& node, PageBuffer& buffer) {
     for (std::size_t i = 0; i < node.children.size(); ++i) {
         putLittleEndian<PageId>(buffer, kChildrenOffset + i * kChildIdBytes, node.children[i]);
     }
+    sealChecksum(buffer, kChecksumOffset);
 }
 
 BTreeNode BTreePage::decode(PageId id, const PageBuffer& buffer) {
+    requireChecksum(buffer, kChecksumOffset, "página del árbol B");
     const std::size_t count = getLittleEndian<std::uint16_t>(buffer, kCountOffset);
     if (count > kMaxKeys) {
-        throw std::runtime_error("página corrupta: demasiadas claves");
+        throw CorruptionError("página corrupta: demasiadas claves");
     }
 
     BTreeNode node;
@@ -53,7 +58,7 @@ BTreeNode BTreePage::decode(PageId id, const PageBuffer& buffer) {
     for (std::size_t i = 0; i < count; ++i) {
         std::string key = getFixedString(buffer, kKeysOffset + i * kKeySlotBytes, kMaxKeyLength);
         if (key.empty()) {
-            throw std::runtime_error("página corrupta: clave vacía");
+            throw CorruptionError("página corrupta: clave vacía");
         }
         node.keys.push_back(std::move(key));
         node.values.push_back(getLittleEndian<std::uint64_t>(buffer, kValuesOffset + i * kValueBytes));

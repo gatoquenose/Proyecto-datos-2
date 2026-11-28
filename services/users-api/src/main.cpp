@@ -8,6 +8,8 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <string_view>
+#include "api/Cors.hpp"
 
 #include "api/HealthController.hpp"
 #include "api/InternalQuotaController.hpp"
@@ -25,6 +27,8 @@
 #include "storage/FilePageStore.hpp"
 #include "storage/FileReservationRepository.hpp"
 #include "storage/FileUserRepository.hpp"
+#include "storage/FileWriteAheadLog.hpp"
+#include "storage/IndexRebuilder.hpp"
 #include "storage/LockedUserRepository.hpp"
 #include "storage/UserFile.hpp"
 #include "tecflix/auth/JwtSigner.hpp"
@@ -46,13 +50,31 @@ constexpr const char* kBindAddress = "0.0.0.0";
 constexpr const char* kServiceVersion = "1.0.0";
 constexpr const char* kUsersFileName = "users.dat";
 constexpr const char* kIndexFileName = "users.idx";
+constexpr const char* kWalFileName = "users.wal";
 constexpr const char* kReservationsFileName = "reservations.dat";
 constexpr const char* kReservationsIndexFileName = "reservations.idx";
+constexpr std::string_view kRebuildIndexFlag = "--rebuild-index";
 constexpr const char* kReadinessProbeId = "00000000-0000-0000-0000-000000000000";
 
 // Log estructurado en JSON, una línea por evento.
 void logEvent(std::ostream& stream, const std::string& level, const std::string& message) {
     stream << nlohmann::json{{"level", level}, {"service", "users-api"}, {"message", message}}.dump() << '\n' << std::flush;
+}
+
+std::string describe(const tecflix::users::RebuildReport& report) {
+    return "registros leídos: " + std::to_string(report.recordsScanned) + ", indexados: " +
+           std::to_string(report.indexed) + ", eliminados omitidos: " + std::to_string(report.deletedSkipped) +
+           ", dañados omitidos: " + std::to_string(report.corruptSkipped) +
+           ", duplicados omitidos: " + std::to_string(report.duplicatesSkipped);
+}
+
+// Mantenimiento manual: `users-api --rebuild-index` rehace users.idx desde users.dat y termina.
+// Detener el servicio antes: no se debe reconstruir mientras otro proceso usa los archivos.
+int rebuildIndexCommand(const std::filesystem::path& dataDirectory) {
+    const tecflix::users::RebuildReport report =
+        tecflix::users::rebuildUserIndexFile(dataDirectory / kUsersFileName, dataDirectory / kIndexFileName);
+    logEvent(std::cout, "info", "índice reconstruido (" + describe(report) + ")");
+    return report.corruptSkipped == 0 ? EXIT_SUCCESS : EXIT_FAILURE;  // 1 = hay registros dañados que revisar
 }
 
 // Medidores que se consultan periódicamente: los comunes (CPU, memoria, disco), el almacenamiento
@@ -82,12 +104,19 @@ std::unique_ptr<Gauges> registerGauges(const opentelemetry::nostd::shared_ptr<op
 }  // namespace
 
 // Aquí se arma todo el servicio: cada pieza recibe lo que necesita por el constructor.
-int main() {
+int main(int argc, char** argv) {
     using namespace tecflix::users;
     try {
         const ProcessEnvironment environment;
         const Config config = Config::fromEnvironment(environment);
         std::filesystem::create_directories(config.dataDirectory);
+        if (argc > 1 && std::string_view{argv[1]} == kRebuildIndexFlag) {
+            return rebuildIndexCommand(config.dataDirectory);
+        }
+        // Si el índice no coincide con users.dat (borrado, dañado o una caída a medias) se rehace antes de atender.
+        if (const auto report = ensureUserIndex(config.dataDirectory / kUsersFileName, config.dataDirectory / kIndexFileName)) {
+            logEvent(std::cerr, "warn", "el índice de usuarios estaba dañado o incompleto y se reconstruyó (" + describe(*report) + ")");
+        }
 
         // La telemetría se enciende primero y se apaga al final (envía lo que quede pendiente).
         const tecflix::telemetry::TelemetrySetup telemetry{{config.serviceName, kServiceVersion, config.otlpEndpoint,
@@ -107,7 +136,12 @@ int main() {
         FilePageStore userPages{config.dataDirectory / kIndexFileName};
         InstrumentedPageStore measuredUserPages{userPages, usersMetrics};
         BTree index{measuredUserPages};
-        FileUserRepository fileRepository{usersFile, index};
+        FileWriteAheadLog userLog{config.dataDirectory / kWalFileName};
+        FileUserRepository fileRepository{usersFile, index, userLog};
+        // Si el proceso anterior cayó a mitad de una escritura, se termina antes de atender peticiones.
+        if (fileRepository.recoverPending()) {
+            logEvent(std::cerr, "warn", "se rehizo una operación de usuarios que había quedado a medias (WAL)");
+        }
         LockedUserRepository lockedRepository{fileRepository};
         InstrumentedUserRepository repository{lockedRepository, usersMetrics};
 
@@ -127,11 +161,14 @@ int main() {
 
         httplib::Server server;
         configureServer(server, traceIds);
+        const char* originEnv = std::getenv("FRONTEND_ORIGIN");
+        const std::string frontendOrigin = (originEnv && *originEnv) ? originEnv : "http://localhost:5173";
+        tecflix::users::configureCors(server, frontendOrigin);
         // "Listo" = el archivo de usuarios responde (una búsqueda de prueba no falla).
         const HealthController health{[&repository] {
             static_cast<void>(repository.findById(kReadinessProbeId));
             return true;
-        }};
+        }, traceIds};
         health.registerRoutes(server);
         TracedRouter router{server, httpMetrics, traceIds, config.serviceName};
         const UsersController users{service, verifier, traceIds, activity, config.jwtLifetime};

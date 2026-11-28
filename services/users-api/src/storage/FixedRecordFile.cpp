@@ -10,7 +10,8 @@ namespace tecflix::users {
 
 namespace {
 
-constexpr std::uint32_t kFormatVersion = 1;
+// Versión 2: cada registro lleva su CRC32C. Los archivos de la versión 1 se rechazan en vez de leerse mal.
+constexpr std::uint32_t kFormatVersion = 2;
 constexpr std::size_t kVersionOffset = 8;
 constexpr std::size_t kRecordSizeOffset = 12;
 

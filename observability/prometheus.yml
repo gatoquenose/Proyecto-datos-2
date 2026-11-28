@@ -1,6 +1,8 @@
 global:
   scrape_interval: 15s
+
 scrape_configs:
+  # Los servicios no se leen directo: mandan sus métricas al collector y Prometheus las lee de ahí.
   - job_name: tecflix
     static_configs:
       - targets: ["otel-collector:8889"]

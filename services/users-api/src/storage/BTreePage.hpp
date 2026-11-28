@@ -23,7 +23,7 @@ public:
     // Lanza std::logic_error si el nodo no cabe o es inconsistente.
     static void encode(const BTreeNode& node, PageBuffer& buffer);
 
-    // Lanza std::runtime_error si los bytes no son una página válida.
+    // Lanza CorruptionError si el checksum no coincide o los bytes no son una página válida.
     static BTreeNode decode(PageId id, const PageBuffer& buffer);
 };
 

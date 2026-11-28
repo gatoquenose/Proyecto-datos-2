@@ -11,7 +11,14 @@ OtelUsersMetrics::OtelUsersMetrics(const opentelemetry::nostd::shared_ptr<opente
       created_(meter->CreateUInt64Counter("users_created_total", "Usuarios registrados", "{user}")),
       deleted_(meter->CreateUInt64Counter("users_deleted_total", "Usuarios eliminados", "{user}")),
       searchDuration_(meter->CreateDoubleHistogram("users_btree_search_duration_seconds",
-                                                   "Duración de las búsquedas de usuarios en el índice de árbol B", "s")) {}
+                                                   "Duración de las búsquedas de usuarios en el índice de árbol B", "s")) {
+    // Un contador sin ninguna suma no se exporta, y Prometheus mostraría la métrica "ausente" hasta el primer
+    // evento. Sumar 0 la hace visible desde el arranque.
+    pagesRead_->Add(0);
+    pagesWritten_->Add(0);
+    created_->Add(0);
+    deleted_->Add(0);
+}
 
 void OtelUsersMetrics::pageRead() {
     pagesRead_->Add(1);

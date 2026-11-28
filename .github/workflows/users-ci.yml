@@ -1,0 +1,83 @@
+name: users-ci
+
+on:
+  push:
+    paths:
+      - "services/users-api/**"
+      - "services/common/**"
+      - "vcpkg.json"
+      - "CMakeLists.txt"
+      - ".github/workflows/users-ci.yml"
+  pull_request:
+    branches: [integracion-vega]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-12
+      CXX: g++-12
+      VCPKG_ROOT: /home/runner/vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: /home/runner/.cache/vcpkg
+      VCPKG_COMMIT: 0df93a05b9de080129e653ec4776d7e14a1b2e4f
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias del sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-12 g++-12 cmake ninja-build \
+            pkg-config autoconf autoconf-archive automake libtool zip unzip curl
+          pip install gcovr
+
+      - name: Cache de vcpkg
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/vcpkg
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_COMMIT }}
+
+      - name: Instalar vcpkg
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          git init "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "$VCPKG_ROOT" fetch --depth 1 origin "$VCPKG_COMMIT"
+          git -C "$VCPKG_ROOT" checkout FETCH_HEAD
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Configurar
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=x64-linux
+          -DCMAKE_CXX_FLAGS="--coverage -O0"
+
+      - name: Compilar
+        run: cmake --build build --parallel 2 --target users-api users_tests tecflix_auth_tests tecflix_telemetry_tests
+
+      - name: Pruebas
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Cobertura (mínimo 90%)
+        run: >
+          gcovr -r . build
+          --gcov-executable gcov-12
+          --exclude-directories 'build/CMakeFiles'
+          --gcov-ignore-errors=no_working_dir_found
+          --gcov-ignore-parse-errors=negative_hits.warn_once_per_file
+          --merge-mode-functions=merge-use-line-min
+          --filter 'services/users-api/src/'
+          --filter 'services/common/auth/src/'
+          --filter 'services/common/telemetry/src/'
+          --exclude 'services/users-api/src/main.cpp'
+          --txt --xml build/coverage.xml
+          --fail-under-line 90
+
+      - name: Guardar ejecutable y cobertura
+        uses: actions/upload-artifact@v4
+        with:
+          name: users-api-linux
+          path: |
+            build/services/users-api/users-api
+            build/coverage.xml

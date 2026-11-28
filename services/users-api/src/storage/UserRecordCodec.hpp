@@ -25,15 +25,16 @@ struct DecodedRecord {
 //   [0]        estado (1 = activo, 2 = eliminado)
 //   campos     id, username, email y hash: 1 byte de largo + texto (tamaño máximo fijo)
 //   números    quotaBytes y usedBytes, 8 bytes cada uno
-//   final      4 bytes reservados para el CRC32C (se agrega con la recuperación ante fallos)
+//   final      CRC32C de todo el registro salvo estos 4 bytes (detecta corrupción al leer)
 class UserRecordCodec {
 public:
     // Lanza std::invalid_argument si algún campo supera su límite.
     static void encode(const User& user, RecordStatus status, RecordBuffer& buffer);
 
-    // Lanza std::runtime_error si los bytes no son un registro válido.
+    // Lanza CorruptionError si el checksum no coincide o los bytes no son un registro válido.
     static DecodedRecord decode(const RecordBuffer& buffer);
 
+    // Cambia el estado y vuelve a sellar el checksum. Lanza CorruptionError si el registro ya estaba dañado.
     static void setStatus(RecordBuffer& buffer, RecordStatus status);
 };
 
