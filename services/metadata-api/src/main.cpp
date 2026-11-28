@@ -16,9 +16,55 @@
 #include <string_view>
 #include <nlohmann/json.hpp>
 #include "MetadataRoutes.hpp"
+#include "MetadataMetrics.hpp"
+#include <chrono>
+#include <filesystem>
+#include <memory>
+#include "tecflix/telemetry/GaugeRegistry.hpp"
+#include "tecflix/telemetry/OtelHttpServerMetrics.hpp"
+#include "tecflix/telemetry/ProcessGauges.hpp"
+#include "tecflix/telemetry/ProcessSampler.hpp"
+#include "tecflix/telemetry/ServerSpan.hpp"
+#include "tecflix/telemetry/TelemetrySetup.hpp"
+
+namespace {
+
+std::string envOr(const char* name, const std::string& fallback) {
+    const char* value = std::getenv(name);
+    return (value != nullptr && *value != '\0') ? std::string{value} : fallback;
+}
+
+// Ruta con parámetros genéricos (no el id real) para no crear una serie de métricas por video.
+std::string routeLabel(const std::string& path) {
+    if (path == "/api/v1/health" || path == "/health") return "/api/v1/health";
+    if (path == "/api/v1/ready" || path == "/ready") return "/api/v1/ready";
+    if (path == "/api/v1/videos") return path;
+    if (path.starts_with("/api/v1/videos/")) {
+        return path.ends_with("/visibility") ? "/api/v1/videos/{id}/visibility" : "/api/v1/videos/{id}";
+    }
+    if (path.starts_with("/api/v1/internal/videos/")) return "/api/v1/internal/videos/{id}";
+    return "unmatched";
+}
+
+}  // namespace
 
 int main() {
     try {
+        // Telemetría: trazas, métricas HTTP y medidores de proceso (si no hay OTEL_EXPORTER_OTLP_ENDPOINT queda apagada).
+        tecflix::telemetry::TelemetrySetup telemetry{{
+            "metadata-api", "1.0.0", envOr("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+            std::chrono::milliseconds{15000},
+            {"http_request_duration_seconds", "metadata_mongo_query_duration_seconds",
+             "metadata_video_list_duration_seconds"}}};
+        const auto meter = telemetry.meter();
+        tecflix::telemetry::OtelHttpServerMetrics httpMetrics{meter};
+        tecflix::metadata::MetadataMetrics metadataMetrics{meter};
+        tecflix::metadata::setCurrentMetrics(&metadataMetrics);
+        // El registro de medidores debe destruirse antes que el medidor de proceso que observa.
+        std::unique_ptr<tecflix::telemetry::ProcessSampler> processSampler;
+        tecflix::telemetry::GaugeRegistry gauges{meter};
+        processSampler = tecflix::telemetry::registerProcessGauges(gauges, envOr("METADATA_DATA_DIR", "."));
+
         // Inicializar el driver de MongoDB
         mongocxx::instance instancia{};
 
@@ -418,10 +464,71 @@ int main() {
             return response_for(request);
         };
 
+        const std::string frontendOrigin = envOr("FRONTEND_ORIGIN", "http://localhost:5173");
+
+        // Envoltura de todas las peticiones: traza, métricas HTTP, CORS, /health y /ready.
+        auto tracedHandler = [&](const auto& request) {
+            using namespace tecflix;
+            const auto start = std::chrono::steady_clock::now();
+            const std::string method{request.method_string().data(), request.method_string().size()};
+            const std::string target{request.target().data(), request.target().size()};
+            const std::string path = target.substr(0, target.find('?'));
+            const std::string route = routeLabel(path);
+
+            tecflix::telemetry::ServerSpan span{
+                "metadata-api", method, route, path,
+                [&request](std::string_view name) {
+                    const auto value = request[beast::string_view{name.data(), name.size()}];
+                    return std::string{value.data(), value.size()};
+                }};
+
+            http::response<http::string_body> response{http::status::ok, request.version()};
+            response.set(http::field::content_type, "application/json");
+            response.keep_alive(request.keep_alive());
+
+            const bool isGet = request.method() == http::verb::get;
+            if (request.method() == http::verb::options) {
+                // Preflight de CORS: no hay cuerpo.
+                response.result(http::status::no_content);
+                response.set(http::field::access_control_allow_methods, "GET, POST, PATCH, DELETE, OPTIONS");
+                response.set(http::field::access_control_allow_headers,
+                             "Authorization, Content-Type, traceparent, tracestate");
+                response.set(http::field::access_control_max_age, "600");
+            } else if (isGet && route == "/api/v1/health") {
+                response.body() = R"({"status":"ok"})";
+            } else if (isGet && route == "/api/v1/ready") {
+                try {
+                    baseDatos.run_command(bsoncxx::builder::basic::make_document(bsoncxx::builder::basic::kvp("ping", 1)).view());
+                    response.body() = R"({"status":"ready"})";
+                } catch (const std::exception&) {
+                    response.result(http::status::service_unavailable);
+                    response.body() = nlohmann::json{{"code", "SERVICE_UNAVAILABLE"},
+                                                     {"message", "MongoDB no disponible"},
+                                                     {"details", nlohmann::json::object()},
+                                                     {"traceId", span.traceId()}}.dump();
+                }
+            } else {
+                response = handler(request);
+            }
+
+            response.set(http::field::access_control_allow_origin, frontendOrigin);
+            response.set(http::field::vary, "Origin");
+            response.set(http::field::access_control_expose_headers, "Content-Range, Accept-Ranges");
+            response.prepare_payload();
+
+            const int status = static_cast<int>(response.result_int());
+            span.finish(status);
+            httpMetrics.record(method, route, status, std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+            return response;
+        };
+
+        const int port = std::stoi(envOr("METADATA_API_PORT", "8082"));
+        if (port < 1 || port > 65535) throw std::runtime_error("METADATA_API_PORT invalido");
+
         return tecflix::run_http_service(
             "metadata-api",
-            8082,
-            handler
+            static_cast<unsigned short>(port),
+            tracedHandler
         );
 
     } catch (const std::exception& error) {

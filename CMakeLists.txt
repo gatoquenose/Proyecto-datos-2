@@ -60,7 +60,7 @@ target_link_libraries(metadata-api PRIVATE
     $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
 )
 
-target_link_libraries(metadata-api PRIVATE tecflix_auth)
+target_link_libraries(metadata-api PRIVATE tecflix_auth tecflix_telemetry)
 
 # Streaming API: JWT, HTTP and JSON
 find_package(httplib CONFIG REQUIRED)

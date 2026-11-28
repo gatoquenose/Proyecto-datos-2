@@ -1,4 +1,5 @@
 #pragma once
+#include "MetadataMetrics.hpp"
 #include "MetadataProcessingCallbacks.hpp"
 #include "MetadataDeletionCallbacks.hpp"
 
@@ -326,6 +327,7 @@ inline std::optional<Json> decode_cursor(std::string_view value) {
 
 inline Response list_videos(const Request& request, mongocxx::database& db,
                             const auth::JwtClaims& claims, std::string_view query) {
+    const auto listStart = std::chrono::steady_clock::now();
     auto params = parse_query(query);
     if (!params) return error(request, http::status::bad_request, "VALIDATION_ERROR", "Consulta invalida");
     for (const auto& [key, val] : *params) {
@@ -425,6 +427,7 @@ inline Response list_videos(const Request& request, mongocxx::database& db,
     Json items = Json::array();
     bool has_more = false;
     std::string last_key, last_id;
+    const auto mongoStart = std::chrono::steady_clock::now();
     auto results = db["videos"].find(filter.view(), options);
     for (auto&& doc : results) {
         if (items.size() >= static_cast<std::size_t>(page_size)) {
@@ -435,6 +438,7 @@ inline Response list_videos(const Request& request, mongocxx::database& db,
         last_id = str(doc, "_id");
         items.push_back(video_json(doc));
     }
+    recordMongoSeconds(secondsSince(mongoStart));
     Json next_cursor = nullptr;
     if (has_more) {
         const Json token = {{"v", 1}, {"sortBy", sort_by}, {"order", order},
@@ -442,6 +446,7 @@ inline Response list_videos(const Request& request, mongocxx::database& db,
                             {"q", search}, {"key", last_key}, {"id", last_id}};
         next_cursor = auth::base64UrlEncode(token.dump());
     }
+    recordListSeconds(secondsSince(listStart));
     return respond(request, http::status::ok,
                 Json{{"items", std::move(items)}, {"nextCursor", std::move(next_cursor)}});
 }
@@ -449,8 +454,10 @@ inline Response list_videos(const Request& request, mongocxx::database& db,
 inline Response get_video(const Request& request, mongocxx::database& db,
                         const auth::JwtClaims& claims, const std::string& id) {
     if (!valid_id(id)) return error(request, http::status::bad_request, "VALIDATION_ERROR", "ID invalido");
+    const auto mongoStart = std::chrono::steady_clock::now();
     auto doc = db["videos"].find_one(b::make_document(b::kvp("_id", id),
         b::kvp("deletedAt", bsoncxx::types::b_null{})));
+    recordMongoSeconds(secondsSince(mongoStart));
     if (!doc) return error(request, http::status::not_found, "NOT_FOUND", "Video no encontrado");
     const auto view = doc->view();
     if (str(view, "ownerId") != claims.subject && str(view, "visibility") != "public")
