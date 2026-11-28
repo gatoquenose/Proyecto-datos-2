@@ -53,5 +53,39 @@ o llevar los totales en memoria (mejora posible para la V2).
 4. Para ver la propagación: enviar el header `traceparent: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01`;
    la traza del dashboard y el `traceId` del error (si lo hay) deben empezar con `0af765...`.
 
-## Pendiente
-Configurar el OpenTelemetry Collector, Prometheus y Grafana en Docker Compose; el Collector debe recibir OTLP/HTTP en el puerto 4318.
+## Recorrido de las métricas
+```
+users-api (OTLP/HTTP :4318) -> otel-collector -> Prometheus (:9090) -> Grafana (:3000)
+                                       \-> Aspire Dashboard (trazas)
+```
+- El Collector (`observability/otel-collector.yaml`) recibe OTLP en 4317 (gRPC) y 4318 (HTTP). Exporta métricas en formato
+  Prometheus por el puerto 8889 y trazas al Aspire Dashboard. Necesita la imagen `otel/opentelemetry-collector-contrib`,
+  porque la imagen base no trae el exportador de Prometheus.
+- `resource_to_telemetry_conversion` está activo para que cada métrica lleve la etiqueta `service_name` y los dashboards
+  puedan separar Users, Metadata y Streaming.
+- Prometheus (`observability/prometheus.yml`) lee el puerto 8889 del Collector cada 15 s (trabajo `tecflix`).
+- Nombres: Prometheus agrega `_bytes` a las métricas con unidad `By`. Para que `service_memory_usage` y `service_disk_usage`
+  se llamen como en la SPEC, esas dos se declaran sin unidad y la unidad queda en la descripción.
+- Los contadores arrancan en 0 al iniciar el servicio, así aparecen en Prometheus aunque aún no haya habido ningún evento.
+
+## Dashboards de Grafana
+Se cargan solos desde `observability/grafana/dashboards/` (aprovisionados; no se configura nada a mano). Todos tienen un
+selector de servicio.
+
+| Dashboard | Qué muestra |
+|---|---|
+| Tecflix - Errores | % de errores, errores por segundo, por código HTTP y rutas con más errores |
+| Tecflix - Salud | Collector/Prometheus arriba, servicios reportando, memoria, CPU, disco, cola de transcodificación |
+| Tecflix - Desempeño | Peticiones por segundo, latencia p50/p95/p99 por servicio y por ruta, búsqueda en el árbol B, páginas leídas/escritas, consultas Mongo, transcodificación |
+| Tecflix - Estadísticas generales | Usuarios creados/eliminados, peticiones, errores, subidas, bytes y segmentos servidos, cuota usada contra asignada |
+
+## Por qué esta pila
+- **OpenTelemetry:** estándar abierto; una sola biblioteca para los 3 servicios y propagación de `traceparent` entre ellos.
+- **Prometheus + Grafana:** estándar para métricas; las consultas por servicio y percentiles de latencia salen directo de los histogramas.
+- **Aspire Dashboard:** recibe trazas y logs por OTLP sin configurar nada más, y es ligero para correr en Docker Compose.
+
+## Cómo comprobar que llegan las métricas
+1. `docker compose up` y esperar a que Users esté listo (`/api/v1/ready`).
+2. Abrir http://localhost:9090/targets: el trabajo `tecflix` debe estar **UP**.
+3. En http://localhost:9090 consultar `http_requests_total`; deben aparecer series con `service_name`.
+4. Abrir http://localhost:3000 (usuario `admin`, contraseña `admin`) y entrar a la carpeta de dashboards.
