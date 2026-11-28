@@ -5,7 +5,7 @@ services:
     environment:
       USERS_DATA_DIR: /data/users
     volumes: ["users-data:/data/users"]
-    ports: ["8081:8080"]
+    ports: ["8081:8081"]
 
   metadata-api:
     build: { context: ., target: metadata-api }
@@ -33,11 +33,20 @@ services:
       FRONTEND_ORIGIN: http://localhost:5173
     volumes: ["streaming-data:/data/streaming"]
     depends_on: [users-api, metadata-api]
-    ports: ["8083:8080"]
+    ports: ["8083:8083"]
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.109.0
     volumes: ["./observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro"]
+    depends_on: [aspire-dashboard]
+
+  # Trazas y logs (OTLP gRPC en 18889, que es adonde exporta el collector). Interfaz en http://localhost:18888
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:9.0
+    environment:
+      DASHBOARD__FRONTEND__AUTHMODE: Unsecured
+      DASHBOARD__OTLP__AUTHMODE: Unsecured
+    ports: ["18888:18888"]
 
   prometheus:
     image: prom/prometheus:v2.54.1
