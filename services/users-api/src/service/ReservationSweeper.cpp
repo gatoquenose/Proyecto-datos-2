@@ -4,10 +4,12 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 
+#include <utility>
+
 namespace tecflix::users {
 
 ReservationSweeper::ReservationSweeper(QuotaService& quota, std::chrono::milliseconds interval)
-    : quota_(quota), interval_(interval), thread_([this](std::stop_token stop) { run(stop); }) {}
+    : quota_(quota), interval_(interval), thread_([this](std::stop_token stop) { run(std::move(stop)); }) {}
 
 void ReservationSweeper::run(std::stop_token stop) {
     std::unique_lock lock{mutex_};

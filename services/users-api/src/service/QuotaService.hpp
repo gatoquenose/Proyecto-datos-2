@@ -24,14 +24,14 @@ struct ReserveRequest {
 enum class ReserveStatus { Created, AlreadyReserved, UserNotFound, QuotaExceeded, Conflict, InvalidExpiry };
 
 struct ReserveOutcome {
-    ReserveStatus status;
+    ReserveStatus status{};
     Reservation reservation;  // tiene valores en Created y AlreadyReserved
 };
 
 enum class SettleStatus { Settled, AlreadySettled, NotFound, QuotaExceeded, InvalidState };
 
 struct SettleOutcome {
-    SettleStatus status;
+    SettleStatus status{};
     Reservation reservation;  // tiene valores en Settled y AlreadySettled
 };
 

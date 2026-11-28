@@ -50,7 +50,7 @@ private:
     // Posición de una clave dentro de un nodo ya leído.
     struct Location {
         BTreeNode node;
-        std::size_t index;
+        std::size_t index{};
     };
 
     void initialize();

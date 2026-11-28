@@ -17,7 +17,7 @@ using RecordBuffer = std::array<std::uint8_t, kRecordBytes>;
 enum class RecordStatus : std::uint8_t { Active = 1, Deleted = 2 };
 
 struct DecodedRecord {
-    RecordStatus status;
+    RecordStatus status{};
     User user;
 };
 

@@ -22,7 +22,7 @@ public:
 // Implementación que no mide nada (telemetría desactivada y pruebas).
 class NullHttpServerMetrics final : public IHttpServerMetrics {
 public:
-    void record(std::string_view, std::string_view, int, double) override {}
+    void record(std::string_view /*method*/, std::string_view /*route*/, int /*status*/, double /*durationSeconds*/) override {}
 };
 
 }  // namespace tecflix::telemetry

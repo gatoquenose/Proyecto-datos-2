@@ -44,6 +44,7 @@ constexpr std::uint64_t kMaxPort = 65535;
 std::uint64_t parseInteger(std::string_view variable, const std::string& text, std::uint64_t min, std::uint64_t max) {
     std::uint64_t value = 0;
     const char* first = text.data();
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic): from_chars exige un rango de punteros.
     const char* last = first + text.size();
     const auto [end, error] = std::from_chars(first, last, value);
     if (error != std::errc{} || end != last || value < min || value > max) {

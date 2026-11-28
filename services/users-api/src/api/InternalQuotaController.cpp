@@ -1,6 +1,7 @@
 #include "api/InternalQuotaController.hpp"
 
 #include <algorithm>
+#include <array>
 #include <iterator>
 #include <nlohmann/json.hpp>
 #include <string_view>
@@ -20,10 +21,10 @@ using nlohmann::json;
 
 constexpr std::string_view kBasePath = "/api/v1/internal/quota/reservations";
 constexpr std::size_t kUuidLength = 36;
-constexpr std::size_t kUuidDashPositions[] = {8, 13, 18, 23};
+constexpr std::array<std::size_t, 4> kUuidDashPositions{8, 13, 18, 23};
 
 bool isDashPosition(std::size_t position) {
-    return std::ranges::find(kUuidDashPositions, position) != std::end(kUuidDashPositions);
+    return std::ranges::find(kUuidDashPositions, position) != kUuidDashPositions.end();
 }
 
 // UUID en texto: 36 caracteres hexadecimales con guiones en las posiciones de siempre.

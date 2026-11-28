@@ -17,8 +17,8 @@ namespace tecflix::users {
 enum class RecordState { Active, Deleted, Corrupt };
 
 struct ScannedRecord {
-    std::uint64_t offset;
-    RecordState state;
+    std::uint64_t offset{};
+    RecordState state{};
     std::optional<User> user;  // solo cuando el registro está activo
 };
 

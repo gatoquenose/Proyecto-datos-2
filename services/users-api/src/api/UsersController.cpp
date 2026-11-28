@@ -102,7 +102,7 @@ std::optional<tecflix::auth::JwtClaims> UsersController::authenticate(const http
 }
 
 bool UsersController::requireSelf(const std::string& pathId, const tecflix::auth::JwtClaims& caller,
-                                  httplib::Response& response, const std::string& traceId) const {
+                                  httplib::Response& response, const std::string& traceId) {
     if (pathId == caller.subject) {
         return true;
     }
@@ -290,8 +290,10 @@ void UsersController::searchUsers(const httplib::Request& request, httplib::Resp
     if (request.has_param("pageSize")) {
         const std::string text = request.get_param_value("pageSize");
         int pageSize = 0;
-        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), pageSize);
-        if (error != std::errc{} || end != text.data() + text.size() || pageSize < kMinPageSize || pageSize > kMaxPageSize) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic): from_chars exige un rango de punteros.
+        const char* const textEnd = text.data() + text.size();
+        const auto [end, error] = std::from_chars(text.data(), textEnd, pageSize);
+        if (error != std::errc{} || end != textEnd || pageSize < kMinPageSize || pageSize > kMaxPageSize) {
             sendError(response, http_status::kBadRequest, "VALIDATION_ERROR", "pageSize debe estar entre 1 y 50", traceId,
                       json{{"field", "pageSize"}});
             return;

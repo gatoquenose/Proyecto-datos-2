@@ -1,5 +1,7 @@
 #include "api/Cors.hpp"
 
+#include "api/HttpStatus.hpp"
+
 namespace tecflix::users {
 
 void configureCors(httplib::Server& server, const std::string& allowedOrigin) {
@@ -12,7 +14,7 @@ void configureCors(httplib::Server& server, const std::string& allowedOrigin) {
                 res.set_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
                 res.set_header("Access-Control-Allow-Headers", "Authorization, Content-Type, traceparent, tracestate");
                 res.set_header("Access-Control-Max-Age", "600");
-                res.status = 204;
+                res.status = http_status::kNoContent;
                 return httplib::Server::HandlerResponse::Handled;
             }
             return httplib::Server::HandlerResponse::Unhandled;

@@ -2,8 +2,10 @@
 
 #include <sodium.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <string_view>
 
 #include "tecflix/auth/CryptoRuntime.hpp"
 
@@ -19,10 +21,13 @@ constexpr std::uint8_t kVersion4 = 0x40;
 constexpr std::uint8_t kVariantRfc4122 = 0x80;
 constexpr std::uint8_t kKeepLowNibble = 0x0F;
 constexpr std::uint8_t kKeepLowSixBits = 0x3F;
-constexpr char kHexDigits[] = "0123456789abcdef";
+constexpr std::string_view kHexDigits = "0123456789abcdef";
+
+// Posiciones (en bytes) después de las cuales va un guion: 8-4-4-4-12 caracteres.
+constexpr std::array<std::size_t, 4> kDashAfterByte{4, 6, 8, 10};
 
 bool hasDashAfter(std::size_t byteIndex) {
-    return byteIndex == 4 || byteIndex == 6 || byteIndex == 8 || byteIndex == 10;
+    return std::ranges::find(kDashAfterByte, byteIndex) != kDashAfterByte.end();
 }
 
 }  // namespace

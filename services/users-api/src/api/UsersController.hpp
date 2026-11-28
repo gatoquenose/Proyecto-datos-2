@@ -38,8 +38,8 @@ private:
     std::optional<tecflix::auth::JwtClaims> authenticate(const httplib::Request& request, httplib::Response& response,
                                                          const std::string& traceId) const;
     // Responde 403 si el id de la ruta no es el del usuario autenticado.
-    bool requireSelf(const std::string& pathId, const tecflix::auth::JwtClaims& caller, httplib::Response& response,
-                     const std::string& traceId) const;
+    static bool requireSelf(const std::string& pathId, const tecflix::auth::JwtClaims& caller, httplib::Response& response,
+                     const std::string& traceId);
     void changeEmailOf(const std::string& userId, const httplib::Request& request, httplib::Response& response,
                        const std::string& traceId) const;
 

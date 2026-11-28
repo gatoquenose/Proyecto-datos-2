@@ -31,6 +31,7 @@ std::uint64_t BinaryFile::size() const {
 void BinaryFile::readAt(std::uint64_t offset, std::span<std::uint8_t> out) const {
     file_.clear();
     file_.seekg(static_cast<std::streamoff>(offset));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): iostream trabaja con char; los bytes son los mismos.
     file_.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(out.size()));
     if (!file_) {
         throw std::runtime_error("no se pudo leer el archivo");
@@ -40,6 +41,7 @@ void BinaryFile::readAt(std::uint64_t offset, std::span<std::uint8_t> out) const
 void BinaryFile::writeAt(std::uint64_t offset, std::span<const std::uint8_t> data) {
     file_.clear();
     file_.seekp(static_cast<std::streamoff>(offset));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): iostream trabaja con char; los bytes son los mismos.
     file_.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
     file_.flush();
     if (!file_) {

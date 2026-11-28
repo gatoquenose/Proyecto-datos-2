@@ -9,6 +9,10 @@
 namespace tecflix::users {
 
 namespace {
+constexpr int kDecimalBase = 10;
+}  // namespace
+
+namespace {
 
 using std::chrono::days;
 using std::chrono::seconds;
@@ -35,7 +39,7 @@ int digits(std::string_view text, std::size_t start, std::size_t count) {
         if (text[i] < '0' || text[i] > '9') {
             return -1;
         }
-        value = value * 10 + (text[i] - '0');
+        value = value * kDecimalBase + (text[i] - '0');
     }
     return value;
 }
@@ -55,6 +59,7 @@ std::string formatIsoUtc(std::int64_t epochSeconds) {
     const std::chrono::year_month_day date{day};
     const std::chrono::hh_mm_ss time{moment - day};
     std::array<char, kLength + 1> buffer{};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg): GCC 12 no trae <format>.
     std::snprintf(buffer.data(), buffer.size(), "%04d-%02u-%02uT%02d:%02d:%02dZ",
                   static_cast<int>(date.year()), static_cast<unsigned>(date.month()),
                   static_cast<unsigned>(date.day()), static_cast<int>(time.hours().count()),

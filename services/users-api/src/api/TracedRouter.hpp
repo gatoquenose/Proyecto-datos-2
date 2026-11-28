@@ -23,7 +23,7 @@ public:
     void Delete(const std::string& pattern, httplib::Server::Handler handler);
 
 private:
-    httplib::Server::Handler wrap(const std::string& method, const std::string& pattern, httplib::Server::Handler handler) const;
+    [[nodiscard]] httplib::Server::Handler wrap(const std::string& method, const std::string& pattern, httplib::Server::Handler handler) const;
 
     httplib::Server& server_;
     tecflix::telemetry::IHttpServerMetrics& metrics_;

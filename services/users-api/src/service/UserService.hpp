@@ -29,7 +29,7 @@ enum class RegisterStatus {
 };
 
 struct RegisterOutcome {
-    RegisterStatus status;
+    RegisterStatus status{};
     User user;  // solo tiene valores cuando status == Created
 };
 
@@ -42,7 +42,7 @@ struct LoginOutcome {
 enum class ChangeEmailStatus { Changed, InvalidEmail, NotFound, EmailTaken };
 
 struct ChangeEmailOutcome {
-    ChangeEmailStatus status;
+    ChangeEmailStatus status{};
     User user;  // usuario ya actualizado; solo tiene valores cuando status == Changed
 };
 

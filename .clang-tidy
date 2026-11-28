@@ -5,6 +5,13 @@ Checks: >
   modernize-*,
   performance-*,
   readability-*,
-  -modernize-use-trailing-return-type
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -bugprone-easily-swappable-parameters,
+  -performance-enum-size,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-pro-bounds-constant-array-index
+# Desactivadas por ser de estilo y no de defecto: nombres cortos (i, id), parametros del mismo tipo seguidos,
+# tamano de los enum, miembros por referencia (inyeccion de dependencias) e indices constantes en std::array.
 WarningsAsErrors: ''
 HeaderFilterRegex: 'services/.*'
